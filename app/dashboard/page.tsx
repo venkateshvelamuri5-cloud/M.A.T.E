@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase } from '../../src/supabase-client';
-import { Upload, Mail, CreditCard, Shield, AlertCircle, CheckCircle, Anchor, LogIn, UserPlus, LogOut, FileText, History } from 'lucide-react';
+import { Upload, Mail, CreditCard, Shield, AlertCircle, CheckCircle, Anchor, LogIn, UserPlus, LogOut, FileText, History, ArrowLeft, Download } from 'lucide-react';
 
 interface InteractionLog {
   id: string;
@@ -16,6 +16,7 @@ interface UploadedFile {
   name: string;
   file_size_mb: number;
   file_type: string;
+  storage_path: string;
 }
 
 export default function UserDashboard() {
@@ -25,6 +26,8 @@ export default function UserDashboard() {
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
+  const [fullNameInput, setFullNameInput] = useState('');
+  const [rankInput, setRankInput] = useState('');
 
   // Dashboard metrics states
   const [interactionsCount, setInteractionsCount] = useState(0);
@@ -34,7 +37,6 @@ export default function UserDashboard() {
   const [interactionHistory, setInteractionHistory] = useState<InteractionLog[]>([]);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isDemoMode, setIsDemoMode] = useState(false);
 
   const STORAGE_LIMIT_MB = 25;
 
@@ -43,24 +45,8 @@ export default function UserDashboard() {
     uploadedFiles.reduce((acc, file) => acc + Number(file.file_size_mb), 0).toFixed(2)
   );
 
-  // Check if Supabase variables are set. If not, auto-enable local demo mode
+  // Check active user session on load
   useEffect(() => {
-    const checkSupabaseConfig = () => {
-      const isPlaceholder = 
-        process.env.NEXT_PUBLIC_SUPABASE_URL === undefined &&
-        (supabase as any).supabaseUrl?.includes('placeholder-project');
-      
-      if (isPlaceholder) {
-        setIsDemoMode(true);
-        setStatusMsg("M.A.T.E is running in Local Offline Demo Mode. (No Supabase config found)");
-      }
-    };
-    checkSupabaseConfig();
-  }, []);
-
-  // Check active user session on load (Real mode only)
-  useEffect(() => {
-    if (isDemoMode) return;
     const checkSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -71,17 +57,17 @@ export default function UserDashboard() {
           fetchUserData(session.user.id, session.user.email || '');
         }
       } catch (err) {
-        console.warn("Auth check failed, defaulting to local states");
+        console.warn("Auth check failed, check your Supabase credentials.");
       }
     };
     checkSession();
-  }, [isDemoMode]);
+  }, []);
 
   // Fetch real data from Supabase DB and Storage lists
   const fetchUserData = async (uid: string, email: string) => {
-    if (isDemoMode) return;
     setIsLoading(true);
     try {
+      // 1. Fetch or create Profile
       let { data: profile } = await supabase
         .from('profiles')
         .select('*')
@@ -91,16 +77,20 @@ export default function UserDashboard() {
       if (!profile) {
         const { data: newProfile } = await supabase
           .from('profiles')
-          .insert({ id: uid, email, role: 'user', subscription_plan: 'free' })
+          .insert({ id: uid, email, role: 'user', subscription_plan: 'free', full_name: fullNameInput || null, rank: rankInput || null })
           .select()
           .single();
         profile = newProfile;
+      } else {
+        setFullNameInput(profile.full_name || '');
+        setRankInput(profile.rank || '');
       }
 
       if (profile) {
         setSubscriptionPlan(profile.subscription_plan);
       }
 
+      // 2. Fetch Limits
       let { data: limits } = await supabase
         .from('usage_limits')
         .select('*')
@@ -121,6 +111,7 @@ export default function UserDashboard() {
         setMaxInteractions(limits.max_interactions);
       }
 
+      // 3. Fetch Uploaded Files List
       const { data: files } = await supabase
         .from('user_files')
         .select('*')
@@ -130,6 +121,7 @@ export default function UserDashboard() {
         setUploadedFiles(files);
       }
 
+      // 4. Fetch Interaction Log List
       const { data: logs } = await supabase
         .from('interactions_log')
         .select('*')
@@ -154,27 +146,17 @@ export default function UserDashboard() {
     setStatusMsg(null);
     setIsLoading(true);
 
-    if (isDemoMode) {
-      // Offline simulation flow
-      setIsLoggedIn(true);
-      setUserId('demo-user-123');
-      setEmailInput(emailInput || 'officer@merchantnavy.com');
-      setUploadedFiles([
-        { id: '1', name: 'sea-service-letter-format.pdf', file_size_mb: 1.4, file_type: 'Discharge Letter' }
-      ]);
-      setInteractionHistory([
-        { id: '101', subject: 'Sea Service Voyage Log #2491', status: 'Completed', created_at: new Date().toISOString() }
-      ]);
-      setStatusMsg("Signed in under Local Offline Demo Mode.");
-      setIsLoading(false);
-      return;
-    }
-
     try {
       if (authMode === 'signup') {
         const { data, error } = await supabase.auth.signUp({
           email: emailInput,
           password: passwordInput,
+          options: {
+            data: {
+              full_name: fullNameInput,
+              rank: rankInput
+            }
+          }
         });
         if (error) throw error;
         if (data.user) {
@@ -204,21 +186,19 @@ export default function UserDashboard() {
   };
 
   const handleLogout = async () => {
-    if (!isDemoMode) {
-      await supabase.auth.signOut();
-    }
+    await supabase.auth.signOut();
     setIsLoggedIn(false);
     setUserId(null);
     setEmailInput('');
     setPasswordInput('');
     setUploadedFiles([]);
     setInteractionHistory([]);
-    setStatusMsg(isDemoMode ? "Logged out of Demo mode." : "Signed out of your workspace.");
+    setStatusMsg("Signed out of your workspace.");
   };
 
-  // Upload Handler
+  // Real Upload Handler to Supabase Storage
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || !e.target.files[0]) return;
+    if (!userId || !e.target.files || !e.target.files[0]) return;
 
     const file = e.target.files[0];
     const fileSizeMB = parseFloat((file.size / (1024 * 1024)).toFixed(2));
@@ -228,31 +208,10 @@ export default function UserDashboard() {
       return;
     }
 
-    if (isDemoMode) {
-      // Local simulation upload
-      const newFile: UploadedFile = {
-        id: Math.random().toString(36).substring(2, 9),
-        name: file.name,
-        file_size_mb: fileSizeMB,
-        file_type: 'Local Template'
-      };
-      setUploadedFiles(prev => [...prev, newFile]);
-      setInteractionHistory(prev => [
-        {
-          id: Math.random().toString(36).substring(2, 5),
-          subject: `Local Upload: "${file.name}"`,
-          status: 'Completed',
-          created_at: new Date().toISOString()
-        },
-        ...prev
-      ]);
-      setStatusMsg(`Offline Simulation: Uploaded "${file.name}" locally.`);
-      return;
-    }
-
     setStatusMsg('Uploading file to storage bucket...');
 
     try {
+      // 1. Upload to bucket
       const storagePath = `${userId}/${Date.now()}_${file.name}`;
       const { error: uploadErr } = await supabase.storage
         .from('user-spaces')
@@ -260,6 +219,7 @@ export default function UserDashboard() {
 
       if (uploadErr) throw uploadErr;
 
+      // 2. Register file reference in user_files DB Table
       const { error: dbErr } = await supabase
         .from('user_files')
         .insert({
@@ -272,6 +232,7 @@ export default function UserDashboard() {
 
       if (dbErr) throw dbErr;
 
+      // 3. Add to interaction history log
       await supabase.from('interactions_log').insert({
         user_id: userId,
         subject: `Uploaded template file: ${file.name}`,
@@ -279,7 +240,7 @@ export default function UserDashboard() {
       });
 
       setStatusMsg(`Successfully uploaded "${file.name}" to your workspace.`);
-      fetchUserData(userId!, emailInput);
+      fetchUserData(userId, emailInput);
 
     } catch (err) {
       console.error(err);
@@ -288,13 +249,9 @@ export default function UserDashboard() {
   };
 
   const handleSimulateStripe = async () => {
-    if (isDemoMode) {
-      setSubscriptionPlan('premium');
-      setStatusMsg("Offline Upgrade: Active Command Plan. Limit set to 5GB.");
-      return;
-    }
     if (!userId) return;
     try {
+      // Direct update of subscription tier
       const { error } = await supabase
         .from('profiles')
         .update({ subscription_plan: 'premium' })
@@ -302,6 +259,7 @@ export default function UserDashboard() {
 
       if (error) throw error;
 
+      // Also upgrade usage interaction limits
       await supabase
         .from('usage_limits')
         .update({ max_interactions: 5000 })
@@ -314,6 +272,24 @@ export default function UserDashboard() {
     }
   };
 
+  const triggerDownload = async (file: UploadedFile) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from('user-spaces')
+        .download(file.storage_path);
+      if (error) throw error;
+      const url = window.URL.createObjectURL(data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', file.name);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      setStatusMsg(`Download failed: ${(err as Error).message}`);
+    }
+  };
+
   // Auth Screen Render
   if (!isLoggedIn) {
     return (
@@ -323,7 +299,11 @@ export default function UserDashboard() {
           <span className="text-xl font-bold tracking-tight text-slate-900">M.A.T.E</span>
         </Link>
 
-        <div className="w-full max-w-sm bg-white border border-slate-200 p-8 rounded-xl shadow-sm">
+        <div className="w-full max-w-sm bg-white border border-slate-200 p-8 rounded-xl shadow-sm relative">
+          <Link href="/" className="absolute top-4 right-4 text-slate-400 hover:text-slate-900 transition text-[10px] font-semibold flex items-center gap-1">
+            <ArrowLeft className="w-3 h-3" /> Home
+          </Link>
+
           <h2 className="text-lg font-bold mb-1 text-slate-900">
             {authMode === 'signin' ? "Sign In to M.A.T.E" : "Register Community Space"}
           </h2>
@@ -340,6 +320,33 @@ export default function UserDashboard() {
           )}
 
           <form onSubmit={handleAuthSubmit} className="space-y-4">
+            {authMode === 'signup' && (
+              <>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Full Name</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={fullNameInput}
+                    onChange={e => setFullNameInput(e.target.value)}
+                    placeholder="Capt. John Doe"
+                    className="w-full px-3.5 py-2 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Mariner Rank</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={rankInput}
+                    onChange={e => setRankInput(e.target.value)}
+                    placeholder="Chief Mate"
+                    className="w-full px-3.5 py-2 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
+                  />
+                </div>
+              </>
+            )}
+
             <div>
               <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Email Address</label>
               <input 
@@ -415,7 +422,8 @@ export default function UserDashboard() {
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-white border border-slate-200 p-8 rounded-xl shadow-sm">
             <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Authenticated Officer</h3>
-            <div className="text-xs font-semibold text-slate-800 truncate mb-6">{emailInput}</div>
+            <div className="text-xs font-semibold text-slate-800 truncate mb-1">{fullNameInput || 'Officer'}</div>
+            <div className="text-[10px] text-slate-400 italic mb-4">{rankInput || 'Unspecified Rank'}</div>
 
             <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Dedicated Storage</h3>
             <div className="flex items-baseline gap-2 mb-6">
@@ -434,7 +442,7 @@ export default function UserDashboard() {
             </div>
 
             {subscriptionPlan !== 'premium' && (
-              <div className="bg-amber-55 border border-amber-200 p-4 rounded-lg flex gap-3 text-amber-800 text-[11px] leading-relaxed mb-6">
+              <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg flex gap-3 text-amber-800 text-[11px] leading-relaxed mb-6">
                 <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
                 <span>You are utilizing your free 25MB space. Upgrade for 5GB limits.</span>
               </div>
@@ -449,11 +457,24 @@ export default function UserDashboard() {
               </button>
             )}
           </div>
+
+          {/* Onboarding Guide Card */}
+          <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
+            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">Onboarding Instructions</h3>
+            <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
+              <p>To verify logs or endorsement credentials: </p>
+              <ol className="list-decimal list-inside space-y-1.5 pl-1">
+                <li>Attach your voyage logs as PDF.</li>
+                <li>Email them to: <strong className="text-slate-800 select-all">verify@mate-navy.com</strong>.</li>
+                <li>M.A.T.E will parse context and send the PDF response back.</li>
+              </ol>
+            </div>
+          </div>
         </div>
 
         <div className="lg:col-span-2 space-y-6">
           {statusMsg && (
-            <div className="bg-slate-105 border border-slate-200 p-4 rounded-lg text-slate-700 text-xs">
+            <div className="bg-slate-100 border border-slate-200 p-4 rounded-lg text-slate-700 text-xs">
               {statusMsg}
             </div>
           )}
@@ -466,14 +487,23 @@ export default function UserDashboard() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               {uploadedFiles.map(file => (
-                <div key={file.id} className="p-4 bg-slate-50 border border-slate-200 rounded-lg flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center">
-                    <FileText className="w-4 h-4 text-slate-500" />
+                <div key={file.id} className="p-4 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between">
+                  <div className="flex items-center gap-3 truncate">
+                    <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0">
+                      <FileText className="w-4 h-4 text-slate-500" />
+                    </div>
+                    <div className="truncate">
+                      <div className="text-xs font-semibold text-slate-800 truncate">{file.name}</div>
+                      <div className="text-[10px] text-slate-400">{file.file_size_mb} MB | {file.file_type}</div>
+                    </div>
                   </div>
-                  <div className="truncate">
-                    <div className="text-xs font-semibold text-slate-800 truncate">{file.name}</div>
-                    <div className="text-[10px] text-slate-400">{file.file_size_mb} MB | {file.file_type}</div>
-                  </div>
+                  <button 
+                    onClick={() => triggerDownload(file)}
+                    className="p-1 text-slate-500 hover:text-slate-900 transition shrink-0" 
+                    title="Download template"
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
                 </div>
               ))}
             </div>

@@ -21,32 +21,9 @@ export default function AnalystPortal() {
   const [activeSubscribers, setActiveSubscribers] = useState(0);
   const [totalInteractions, setTotalInteractions] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
-  const [isDemoMode, setIsDemoMode] = useState(false);
-
-  // Check if Supabase variables are set. If not, auto-enable local demo mode
-  useEffect(() => {
-    const isPlaceholder = 
-      process.env.NEXT_PUBLIC_SUPABASE_URL === undefined &&
-      (supabase as any).supabaseUrl?.includes('placeholder-project');
-    
-    if (isPlaceholder) {
-      setIsDemoMode(true);
-      setKbFiles([
-        { id: '1', name: 'merchant-navy-pricing-2026.docx', file_size_mb: 0.12, created_at: new Date().toISOString(), storage_path: 'mock' },
-        { id: '2', name: 'sea-service-regulations-2026.pdf', file_size_mb: 1.45, created_at: new Date().toISOString(), storage_path: 'mock' }
-      ]);
-      setTotalActiveUsers(48);
-      setActiveSubscribers(6);
-      setTotalInteractions(340);
-      setStatusMsg("M.A.T.E is running in Local Offline Demo Mode. (No Supabase config found)");
-    } else {
-      fetchAnalyticsAndFiles();
-    }
-  }, []);
 
   // Fetch real analytics parameters from Supabase tables
   const fetchAnalyticsAndFiles = async () => {
-    if (isDemoMode) return;
     setIsLoading(true);
     try {
       const { count: usersCount } = await supabase
@@ -81,6 +58,10 @@ export default function AnalystPortal() {
     }
   };
 
+  useEffect(() => {
+    fetchAnalyticsAndFiles();
+  }, []);
+
   // Calculate costs and revenue
   const monthlyRecurringRevenue = activeSubscribers * 29;
   const estimatedGeminiCost = parseFloat((totalInteractions * 0.0005).toFixed(4));
@@ -93,20 +74,6 @@ export default function AnalystPortal() {
 
     const file = e.target.files[0];
     const fileSizeMB = parseFloat((file.size / (1024 * 1024)).toFixed(2));
-
-    if (isDemoMode) {
-      const newFile: KnowledgeFile = {
-        id: Math.random().toString(36).substring(2, 9),
-        name: file.name,
-        file_size_mb: fileSizeMB,
-        created_at: new Date().toISOString(),
-        storage_path: 'mock'
-      };
-      setKbFiles(prev => [...prev, newFile]);
-      setStatusMsg(`Offline Simulation: Uploaded reference document "${file.name}"`);
-      return;
-    }
-
     setStatusMsg('Uploading to knowledge-base storage...');
 
     try {
@@ -139,12 +106,6 @@ export default function AnalystPortal() {
   };
 
   const handleDelete = async (file: KnowledgeFile) => {
-    if (isDemoMode) {
-      setKbFiles(kbFiles.filter(f => f.id !== file.id));
-      setStatusMsg(`Offline Simulation: Deleted reference document ${file.name}`);
-      return;
-    }
-
     setStatusMsg(`Deleting ${file.name}...`);
     try {
       await supabase.storage

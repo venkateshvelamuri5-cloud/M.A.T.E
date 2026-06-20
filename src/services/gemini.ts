@@ -72,11 +72,14 @@ export class GeminiService {
             role: 'user',
             parts: [
               {
-                text: `You are an agentic business representative. Answer the query using the reference company data below. If the answer cannot be found in the context, state that clearly.\n\nContext:\n${referenceContext}\n\nQuery:\n${query}`
+                text: `You are an agentic maritime representative. Answer the query using the reference maritime data below. If the answer cannot be found in the context, look it up online using Google Search.\n\nContext:\n${referenceContext}\n\nQuery:\n${query}`
               }
             ]
           }
-        ]
+        ],
+        config: {
+          tools: [{ googleSearch: {} }]
+        }
       });
 
       return response.text?.trim() || 'No response generated.';

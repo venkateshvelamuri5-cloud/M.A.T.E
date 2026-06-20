@@ -12,6 +12,8 @@ DROP TABLE IF EXISTS public.profiles CASCADE;
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email VARCHAR(255) UNIQUE NOT NULL,
+    full_name VARCHAR(255),
+    rank VARCHAR(100), -- e.g., Captain, Chief Mate
     role VARCHAR(50) DEFAULT 'user' NOT NULL, -- 'user' or 'analyst'
     subscription_plan VARCHAR(50) DEFAULT 'free' NOT NULL, -- 'free', 'premium'
     stripe_customer_id VARCHAR(255),
@@ -82,7 +84,7 @@ CREATE OR REPLACE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 6. Automatically initialize Storage Buckets in Supabase via SQL Editor
+-- 6. Automatically initialize Storage Buckets in Supabase Storage Registry
 INSERT INTO storage.buckets (id, name, public) 
 VALUES ('user-spaces', 'user-spaces', false)
 ON CONFLICT (id) DO NOTHING;

@@ -62,9 +62,9 @@ export class GeneratorService {
         currentY -= fontSize + 6;
 
         // If page fills up, create a new page
-        if (currentY < margin) {
+        if (currentY < margin + 20) {
           page = pdfDoc.addPage([595.276, 841.89]);
-          currentY = height - margin;
+          currentY = height - margin - 40; // Proper top margin on new pages
         }
       } else {
         currentLine = testLine;
