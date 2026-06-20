@@ -1,11 +1,22 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Fallback to placeholder URLs during Next.js compile/build phases if variables are not yet defined
-const supabaseUrl = process.env.SUPABASE_URL || 'https://placeholder-project.supabase.co';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-key';
+// In Next.js, environment variables accessed in the browser (client-side) 
+// must be prefixed with NEXT_PUBLIC_
+const supabaseUrl = 
+  process.env.NEXT_PUBLIC_SUPABASE_URL || 
+  process.env.SUPABASE_URL || 
+  'https://placeholder-project.supabase.co';
 
-export const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+// For browser calls (Auth/Uploads), we use the Anon Public key.
+// For serverless functions (handling SMTP/Gemini), we use the Service Role key.
+const supabaseKey = 
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
+  process.env.SUPABASE_SERVICE_ROLE_KEY || 
+  'placeholder-key';
+
+export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
-    persistSession: false,
+    persistSession: true, // Allow browser authentication sessions to persist
+    detectSessionInUrl: true
   }
 });
