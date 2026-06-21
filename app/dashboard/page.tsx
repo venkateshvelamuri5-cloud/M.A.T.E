@@ -196,12 +196,21 @@ export default function UserDashboard() {
     setStatusMsg("Signed out of your workspace.");
   };
 
-  // Real Upload Handler to Supabase Storage
+  // Real Upload Handler supporting .pdf, .docx, .txt, .md
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!userId || !e.target.files || !e.target.files[0]) return;
 
     const file = e.target.files[0];
     const fileSizeMB = parseFloat((file.size / (1024 * 1024)).toFixed(2));
+    
+    // Strict file type validation
+    const allowedExtensions = ['.pdf', '.docx', '.doc', '.txt', '.md'];
+    const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    
+    if (!allowedExtensions.includes(fileExtension)) {
+      setStatusMsg(`Upload failed. Only PDF, DOCX, DOC, TXT, and MD files are allowed.`);
+      return;
+    }
 
     if (totalSpaceUsedMB + fileSizeMB > (subscriptionPlan === 'premium' ? 5000 : STORAGE_LIMIT_MB)) {
       setStatusMsg(`Upload failed. This file exceeds your storage capacity limit.`);
@@ -211,7 +220,7 @@ export default function UserDashboard() {
     setStatusMsg('Uploading file to storage bucket...');
 
     try {
-      // 1. Upload to bucket
+      // 1. Upload to bucket under isolated user directory path: spaces/{userId}/{fileName}
       const storagePath = `${userId}/${Date.now()}_${file.name}`;
       const { error: uploadErr } = await supabase.storage
         .from('user-spaces')
@@ -226,7 +235,7 @@ export default function UserDashboard() {
           user_id: userId,
           name: file.name,
           storage_path: storagePath,
-          file_type: 'letterhead',
+          file_type: fileExtension.substring(1), // e.g. 'pdf', 'docx'
           file_size_mb: fileSizeMB
         });
 
@@ -235,7 +244,7 @@ export default function UserDashboard() {
       // 3. Add to interaction history log
       await supabase.from('interactions_log').insert({
         user_id: userId,
-        subject: `Uploaded template file: ${file.name}`,
+        subject: `Uploaded document: ${file.name}`,
         status: 'Completed'
       });
 
@@ -248,27 +257,27 @@ export default function UserDashboard() {
     }
   };
 
-  const handleSimulateStripe = async () => {
-    if (!userId) return;
+  const handleStripeCheckout = async () => {
+    if (!userId || !emailInput) return;
+    setStatusMsg("Redirecting to Stripe checkout session...");
     try {
-      // Direct update of subscription tier
-      const { error } = await supabase
-        .from('profiles')
-        .update({ subscription_plan: 'premium' })
-        .eq('id', userId);
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: emailInput }),
+      });
 
-      if (error) throw error;
-
-      // Also upgrade usage interaction limits
-      await supabase
-        .from('usage_limits')
-        .update({ max_interactions: 5000 })
-        .eq('user_id', userId);
-
-      setStatusMsg("Subscription upgraded to Command Plan via Stripe! Storage limit is now 5GB.");
-      fetchUserData(userId, emailInput);
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error(data.error || 'Failed to create checkout session');
+      }
     } catch (err) {
-      setStatusMsg(`Upgrade failed: ${(err as Error).message}`);
+      console.error(err);
+      setStatusMsg(`Stripe redirect error: ${(err as Error).message}`);
     }
   };
 
@@ -450,7 +459,7 @@ export default function UserDashboard() {
 
             {subscriptionPlan !== 'premium' && (
               <button 
-                onClick={handleSimulateStripe}
+                onClick={handleStripeCheckout}
                 className="w-full py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition shadow-sm"
               >
                 Upgrade Space (Stripe)
@@ -494,13 +503,13 @@ export default function UserDashboard() {
                     </div>
                     <div className="truncate">
                       <div className="text-xs font-semibold text-slate-800 truncate">{file.name}</div>
-                      <div className="text-[10px] text-slate-400">{file.file_size_mb} MB | {file.file_type}</div>
+                      <div className="text-[10px] text-slate-400">{file.file_size_mb} MB | {file.file_type.toUpperCase()}</div>
                     </div>
                   </div>
                   <button 
                     onClick={() => triggerDownload(file)}
                     className="p-1 text-slate-500 hover:text-slate-900 transition shrink-0" 
-                    title="Download template"
+                    title="Download document"
                   >
                     <Download className="w-4 h-4" />
                   </button>
@@ -511,11 +520,12 @@ export default function UserDashboard() {
             <div className="border-2 border-dashed border-slate-200 hover:border-slate-400 rounded-lg p-8 flex flex-col items-center justify-center text-center transition cursor-pointer relative">
               <input 
                 type="file" 
+                accept=".pdf,.docx,.doc,.txt,.md"
                 onChange={handleFileUpload}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
               <span className="text-xs font-semibold text-slate-600">
-                Upload Sea Log / Letter of Sea Service (.pdf)
+                Upload Document (.pdf, .docx, .doc, .txt, .md)
               </span>
             </div>
           </div>

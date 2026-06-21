@@ -63,18 +63,36 @@ export class GeminiService {
   /**
    * Handles contextual search grounding queries by passing reference/grounding files and search instruction
    */
-  async runGroundedQuery(query: string, referenceContext: string): Promise<string> {
+  async runGroundedQuery(
+    query: string, 
+    referenceContext: string,
+    pdfAttachments: Array<{ data: Buffer; mimeType: string }> = [],
+    systemPrompt?: string
+  ): Promise<string> {
     try {
+      const activePrompt = systemPrompt || 'You are an agentic maritime representative. Answer the query using the reference maritime data below. If the answer cannot be found in the context, look it up online using Google Search.';
+      const parts: any[] = [
+        {
+          text: `${activePrompt}\n\nContext:\n${referenceContext}\n\nQuery:\n${query}`
+        }
+      ];
+
+      // Add PDF files directly as inlineData contents
+      for (const pdf of pdfAttachments) {
+        parts.push({
+          inlineData: {
+            data: pdf.data.toString('base64'),
+            mimeType: pdf.mimeType
+          }
+        });
+      }
+
       const response = await this.ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: [
           {
             role: 'user',
-            parts: [
-              {
-                text: `You are an agentic maritime representative. Answer the query using the reference maritime data below. If the answer cannot be found in the context, look it up online using Google Search.\n\nContext:\n${referenceContext}\n\nQuery:\n${query}`
-              }
-            ]
+            parts: parts
           }
         ],
         config: {
@@ -86,6 +104,37 @@ export class GeminiService {
     } catch (error) {
       console.error('Error calling Gemini for grounded query:', error);
       throw new Error(`Failed to process query with Gemini grounding: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Classifies the query and selects the most appropriate agent ID based on descriptions
+   */
+  async classifyQuery(query: string, agents: Array<{ id: string; name: string; description: string }>): Promise<string> {
+    if (agents.length === 0) return '';
+    if (agents.length === 1) return agents[0].id;
+
+    try {
+      const agentsListString = agents.map(a => `ID: "${a.id}", Name: "${a.name}", Description: "${a.description}"`).join('\n');
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: `You are an intelligent routing agent. Given this incoming inquiry, classify it into the single best matching agent persona. You MUST return ONLY the matching Agent UUID. Do not output any codeblock or markdown or extra characters. Just the UUID itself. If no specific agent matches or if there is uncertainty, return the UUID of the default agent.\n\nAvailable Agents:\n${agentsListString}\n\nUser Inquiry:\n${query}`
+              }
+            ]
+          }
+        ]
+      });
+
+      const matchedId = response.text?.trim() || '';
+      return matchedId.replace(/['"`\s]/g, '');
+    } catch (error) {
+      console.error('Error classifying query with Gemini:', error);
+      return agents[0].id;
     }
   }
 }

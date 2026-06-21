@@ -120,35 +120,116 @@ export async function POST(req: NextRequest) {
 
     let processedResult = scrubbedText;
     let fileReferenceContext = '';
+    const pdfAttachments: Array<{ data: Buffer; mimeType: string }> = [];
+
+    // Fetch dynamic system prompts and route to correct agent
+    let selectedAgentPrompt = 'You are an agentic maritime representative. Answer the query using the reference maritime data and user documents provided.';
+    let selectedAgentId: string | null = null;
+
+    try {
+      const { data: dbAgents } = await supabase
+        .from('agents')
+        .select('id, name, description, system_prompt');
+
+      if (dbAgents && dbAgents.length > 0) {
+        const classifiedId = await gemini.classifyQuery(promptQuery || bodyText, dbAgents);
+        console.log(`Classified query to Agent ID: ${classifiedId}`);
+        const matchedAgent = dbAgents.find(a => a.id === classifiedId) || dbAgents[0];
+        if (matchedAgent) {
+          selectedAgentPrompt = matchedAgent.system_prompt;
+          selectedAgentId = matchedAgent.id;
+          console.log(`Routed to Agent: ${matchedAgent.name}`);
+        }
+      }
+    } catch (agentErr) {
+      console.warn('Agent routing classification failed, using default fallback:', (agentErr as Error).message);
+    }
 
     if (userId) {
       try {
-        const { data: fileRef } = await supabase
+        // Collect files to download (both user's private files and agent specialized knowledge files)
+        const filesToDownload: any[] = [];
+
+        // 1. Get user files from user_files
+        const { data: userFiles, error: userFilesErr } = await supabase
           .from('user_files')
-          .select('storage_path, name')
-          .eq('user_id', userId)
-          .eq('file_type', 'knowledge_base')
-          .limit(1)
-          .maybeSingle();
+          .select('storage_path, name, file_type, user_id, agent_id')
+          .eq('user_id', userId);
 
-        if (fileRef) {
-          console.log(`Found reference knowledge document: ${fileRef.name}`);
-          const { data: fileBlob, error: downloadErr } = await supabase.storage
-            .from('knowledge-base')
-            .download(fileRef.storage_path);
+        if (userFilesErr) {
+          console.warn('Failed to query user files from database:', userFilesErr.message);
+        } else if (userFiles) {
+          filesToDownload.push(...userFiles);
+        }
 
-          if (!downloadErr && fileBlob) {
-            fileReferenceContext = await fileBlob.text();
-            console.log('Successfully retrieved grounding file contents from storage bucket');
+        // 2. Get agent specialized knowledge files
+        if (selectedAgentId) {
+          const { data: matchedAgentFiles, error: agentFilesErr } = await supabase
+            .from('user_files')
+            .select('storage_path, name, file_type, user_id, agent_id')
+            .eq('agent_id', selectedAgentId);
+
+          if (agentFilesErr) {
+            console.warn('Failed to query agent files from database:', agentFilesErr.message);
+          } else if (matchedAgentFiles) {
+            filesToDownload.push(...matchedAgentFiles);
+          }
+        }
+
+        if (filesToDownload.length > 0) {
+          console.log(`Total files to process for hybrid context: ${filesToDownload.length}`);
+          for (const fileRef of filesToDownload) {
+            // Determine storage bucket: user space vs knowledge base
+            const bucketName = (fileRef.agent_id || fileRef.user_id === '00000000-0000-0000-0000-000000000000')
+              ? 'knowledge-base'
+              : 'user-spaces';
+
+            console.log(`Processing reference document from bucket [${bucketName}]: ${fileRef.name} (${fileRef.file_type})`);
+            const { data: fileBlob, error: downloadErr } = await supabase.storage
+              .from(bucketName)
+              .download(fileRef.storage_path);
+
+            if (downloadErr || !fileBlob) {
+              console.warn(`Failed to download ${fileRef.name} from storage:`, downloadErr?.message);
+              continue;
+            }
+
+            const fileExt = (fileRef.file_type || '').toLowerCase();
+            if (fileExt === 'txt' || fileExt === 'md') {
+              const text = await fileBlob.text();
+              fileReferenceContext += `\n\n--- Document: ${fileRef.name} ---\n${text}\n`;
+            } else if (fileExt === 'docx') {
+              const arrayBuffer = await fileBlob.arrayBuffer();
+              try {
+                const mammoth = require('mammoth');
+                const result = await mammoth.extractRawText({ buffer: Buffer.from(arrayBuffer) });
+                fileReferenceContext += `\n\n--- Document: ${fileRef.name} ---\n${result.value}\n`;
+              } catch (docxErr) {
+                console.error(`Error extracting text from DOCX ${fileRef.name}:`, docxErr);
+              }
+            } else if (fileExt === 'pdf') {
+              const arrayBuffer = await fileBlob.arrayBuffer();
+              pdfAttachments.push({
+                data: Buffer.from(arrayBuffer),
+                mimeType: 'application/pdf'
+              });
+            } else {
+              console.log(`Skipping file parsing for unsupported extension: ${fileExt}`);
+            }
           }
         }
       } catch (fileErr) {
-        console.warn('Failed to query user files from Supabase Storage:', (fileErr as Error).message);
+        console.warn('Failed to query or parse user/agent files from Supabase Storage:', (fileErr as Error).message);
       }
     }
 
     if (promptQuery) {
-      processedResult = await gemini.runGroundedQuery(promptQuery, `${scrubbedText}\n\n${fileReferenceContext}`);
+      processedResult = await gemini.runGroundedQuery(
+        promptQuery, 
+        `${scrubbedText}\n\n${fileReferenceContext}`,
+        pdfAttachments,
+        selectedAgentPrompt
+      );
     }
 
     // 5. Generate documents

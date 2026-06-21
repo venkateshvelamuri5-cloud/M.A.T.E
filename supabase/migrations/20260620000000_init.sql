@@ -92,3 +92,48 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO storage.buckets (id, name, public) 
 VALUES ('knowledge-base', 'knowledge-base', false)
 ON CONFLICT (id) DO NOTHING;
+
+-- 7. Add Storage RLS policies for user-spaces bucket
+-- These policies restrict users so they can only manage objects in their own isolated folders (named after their user UUIDs)
+CREATE POLICY "Allow authenticated users to upload to their own folder" 
+ON storage.objects FOR INSERT 
+TO authenticated 
+WITH CHECK (bucket_id = 'user-spaces' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+CREATE POLICY "Allow authenticated users to read their own folder" 
+ON storage.objects FOR SELECT 
+TO authenticated 
+USING (bucket_id = 'user-spaces' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+CREATE POLICY "Allow authenticated users to delete their own folder files" 
+ON storage.objects FOR DELETE 
+TO authenticated 
+USING (bucket_id = 'user-spaces' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+-- 8. Create Agents Table
+CREATE TABLE IF NOT EXISTS public.agents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    description TEXT NOT NULL, -- Crucial for Gemini classification
+    system_prompt TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- 9. Add agent_id column to user_files referencing agents
+ALTER TABLE public.user_files ADD COLUMN IF NOT EXISTS agent_id UUID REFERENCES public.agents(id) ON DELETE SET NULL;
+
+-- 10. Enable RLS for agents table and add policies
+ALTER TABLE public.agents ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public read access to agents" ON public.agents FOR SELECT USING (true);
+CREATE POLICY "Allow service role or analysts full control over agents" ON public.agents FOR ALL USING (true);
+
+-- 11. Insert default fallback agent
+INSERT INTO public.agents (name, description, system_prompt)
+VALUES (
+    'General Maritime Agent',
+    'Default handler for general maritime queries, sea service guidelines, profile issues, or queries that do not match specialized categories.',
+    'You are an agentic maritime representative. Answer the query using the reference maritime data and user documents provided.'
+) ON CONFLICT DO NOTHING;
+
+
