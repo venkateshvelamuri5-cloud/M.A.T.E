@@ -13,6 +13,13 @@ export async function POST(req: NextRequest) {
   const generator = new GeneratorService();
   const smtp = new SmtpService();
 
+  let userId: string | null = null;
+  let selectedAgentId: string | null = null;
+  let subject = 'M.A.T.E Maritime Inquiry';
+  let from = '';
+  let limitCount = 0;
+  let limitMax = 10;
+
   try {
     // 1. Verify signatures if webhook secret is configured
     const signature = req.headers.get('x-hostinger-signature');
@@ -31,11 +38,11 @@ export async function POST(req: NextRequest) {
 
     const fromRaw = emailData.from || emailData.sender || emailData.fromAddress || body.envelope?.from;
     // Extract the raw email address if it is in format: "Name <email@domain.com>"
-    const from = typeof fromRaw === 'string' 
+    from = typeof fromRaw === 'string' 
       ? (fromRaw.includes('<') ? fromRaw.match(/<([^>]+)>/)?.[1] || fromRaw : fromRaw).trim()
       : fromRaw;
 
-    const subject = emailData.subject || emailData.title || 'M.A.T.E Maritime Inquiry';
+    subject = emailData.subject || emailData.title || 'M.A.T.E Maritime Inquiry';
     const bodyText = emailData.plainBody || emailData.bodyText || emailData.text || emailData.body || emailData.htmlBody || emailData.html || emailData.content;
     const promptQuery = emailData.subject || emailData.promptQuery || emailData.query || emailData.ask;
     const requestDocType = emailData.requestDocType || emailData.docType || 'pdf'; // Default to pdf responses
@@ -47,10 +54,6 @@ export async function POST(req: NextRequest) {
         receivedPayload: { from, subject, bodyText: bodyText ? 'Present' : 'Missing' } 
       }, { status: 400 });
     }
-
-    let userId: string | null = null;
-    let limitCount = 0;
-    let limitMax = 10;
 
     // 3. Connect to Supabase to verify user profiles and limits
     try {
@@ -65,34 +68,13 @@ export async function POST(req: NextRequest) {
       }
 
       if (!profile) {
-        console.log(`User profile for ${from} not found. Creating a new community profile...`);
-        const { data: newProfile, error: createErr } = await supabase
-          .from('profiles')
-          .insert({
-            id: '00000000-0000-0000-0000-' + Math.random().toString(36).substring(2, 14).padEnd(12, '0'),
-            email: from,
-            role: 'user',
-            subscription_plan: 'free'
-          })
-          .select()
-          .single();
-
-        if (createErr || !newProfile) {
-          throw new Error(`Failed to create community profile: ${createErr?.message}`);
-        }
-        profile = newProfile;
-
-        const { error: limitErr } = await supabase
-          .from('usage_limits')
-          .insert({
-            user_id: profile.id,
-            interactions_count: 0,
-            max_interactions: 10
-          });
-
-        if (limitErr) {
-          console.warn('Could not initialize usage limits row:', limitErr.message);
-        }
+        console.log(`User profile for ${from} not found. Sending sign up instruction email...`);
+        await smtp.sendMail({
+          to: from,
+          subject: `Re: ${subject || 'M.A.T.E Workspace Invitation'}`,
+          text: `Hello,\n\nYour email address (${from}) is not registered with M.A.T.E. Please sign up at your landing page first to initialize your workspace.\n\nThank you,\nM.A.T.E Team`
+        });
+        return NextResponse.json({ success: false, message: 'User profile not found. Emailed registration invite.' });
       }
 
       userId = profile.id;
@@ -131,7 +113,6 @@ export async function POST(req: NextRequest) {
 
     // Fetch dynamic system prompts and route to correct agent
     let selectedAgentPrompt = 'You are an agentic maritime representative. Answer the query using the reference maritime data and user documents provided.';
-    let selectedAgentId: string | null = null;
 
     try {
       const { data: dbAgents } = await supabase
@@ -303,7 +284,8 @@ export async function POST(req: NextRequest) {
           .insert({
             user_id: userId,
             subject: subject || 'Response Inquiry',
-            status: 'Completed'
+            status: 'Completed',
+            agent_id: selectedAgentId
           });
 
         console.log(`Updated interaction limit counts to ${limitCount + 1}`);
@@ -321,6 +303,43 @@ export async function POST(req: NextRequest) {
 
   } catch (error) {
     console.error('Vercel Serverless Webhook encountered an error:', error);
-    return NextResponse.json({ error: 'Server Error', details: (error as Error).message }, { status: 500 });
+    
+    // Log failure in database if user ID was identified
+    if (userId) {
+      try {
+        await supabase
+          .from('interactions_log')
+          .insert({
+            user_id: userId,
+            subject: subject || 'Failed Inquiry',
+            status: 'Failed',
+            agent_id: selectedAgentId,
+            error_message: (error as Error).message
+          });
+      } catch (logErr) {
+        console.warn('Could not log webhook failure in DB:', (logErr as Error).message);
+      }
+    }
+
+    // Fail-safe: Email the user apologizing for the technical downtime so they aren't left waiting!
+    if (from) {
+      try {
+        await smtp.sendMail({
+          to: from,
+          subject: `Re: ${subject || 'Inquiry Service Notice'}`,
+          text: `Hello,\n\nWe received your inquiry regarding "${subject || 'your request'}".\n\nOur validation engine is currently experiencing temporary technical difficulties. Our system administrators have been notified, and we will process and resolve your query as soon as services are restored.\n\nWe apologize for the delay.\n\nThank you,\nM.A.T.E Team`
+        });
+        console.log('Successfully sent fail-safe downtime email notification to user');
+      } catch (mailErr) {
+        console.error('Could not send fail-safe email to user:', (mailErr as Error).message);
+      }
+    }
+
+    // Return a clean 200 response to Hostinger to prevent unnecessary webhook retries
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Server encountered error, sent fail-safe notice.', 
+      details: (error as Error).message 
+    }, { status: 200 });
   }
 }

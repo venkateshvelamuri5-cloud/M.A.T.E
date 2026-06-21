@@ -20,9 +20,26 @@ interface Agent {
   system_prompt: string;
 }
 
+interface ActivityLog {
+  id: string;
+  created_at: string;
+  subject: string;
+  status: string;
+  error_message?: string | null;
+  profiles?: { email: string } | null;
+  agents?: { name: string } | null;
+}
+
 export default function AnalystPortal() {
   const [kbFiles, setKbFiles] = useState<KnowledgeFile[]>([]);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+
+  // Authentication states
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isAnalyst, setIsAnalyst] = useState(false);
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // Business Analytics states
   const [totalActiveUsers, setTotalActiveUsers] = useState(0);
@@ -36,6 +53,7 @@ export default function AnalystPortal() {
   const [newAgentDesc, setNewAgentDesc] = useState('');
   const [newAgentPrompt, setNewAgentPrompt] = useState('');
   const [selectedAgentForUpload, setSelectedAgentForUpload] = useState<string>('global');
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
 
   // Fetch real analytics parameters from Supabase tables
   const fetchAnalyticsAndFiles = async () => {
@@ -72,6 +90,14 @@ export default function AnalystPortal() {
         setAgents(dbAgents);
       }
 
+      const { data: logs } = await supabase
+        .from('interactions_log')
+        .select('id, created_at, subject, status, error_message, profiles(email), agents(name)')
+        .order('created_at', { ascending: false });
+      if (logs) {
+        setActivityLogs(logs as any[]);
+      }
+
     } catch (err) {
       console.error('Failed to query analyst metrics from Supabase:', err);
       setStatusMsg('Error connecting to Supabase database.');
@@ -81,8 +107,74 @@ export default function AnalystPortal() {
   };
 
   useEffect(() => {
-    fetchAnalyticsAndFiles();
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', session.user.id)
+            .maybeSingle();
+
+          if (profile?.role === 'analyst') {
+            setIsLoggedIn(true);
+            setIsAnalyst(true);
+            fetchAnalyticsAndFiles();
+          } else {
+            setAuthError("Unauthorized: Restricted to analyst accounts only.");
+            await supabase.auth.signOut();
+          }
+        }
+      } catch (err) {
+        console.warn("Session check error:", err);
+      }
+    };
+    checkSession();
   }, []);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: emailInput,
+        password: passwordInput
+      });
+
+      if (error) throw error;
+
+      if (data.user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', data.user.id)
+          .maybeSingle();
+
+        if (profile?.role === 'analyst') {
+          setIsLoggedIn(true);
+          setIsAnalyst(true);
+          fetchAnalyticsAndFiles();
+        } else {
+          setAuthError("Unauthorized: Restricted to analyst accounts only.");
+          await supabase.auth.signOut();
+        }
+      }
+    } catch (err) {
+      setAuthError((err as Error).message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setIsLoggedIn(false);
+    setIsAnalyst(false);
+    setEmailInput('');
+    setPasswordInput('');
+  };
 
   // Calculate costs and revenue
   const monthlyRecurringRevenue = activeSubscribers * 29;
@@ -188,13 +280,75 @@ export default function AnalystPortal() {
     }
   };
 
+  if (!isLoggedIn || !isAnalyst) {
+    return (
+      <div className="min-h-screen bg-[#fafafb] text-slate-800 flex flex-col justify-center items-center font-sans p-6">
+        <div className="w-full max-w-sm bg-white border border-slate-200 p-8 rounded-xl shadow-sm relative">
+          <Link href="/" className="absolute top-4 right-4 text-slate-400 hover:text-slate-900 transition text-[10px] font-semibold flex items-center gap-1">
+            <ArrowLeft className="w-3.5 h-3.5" /> Home
+          </Link>
+
+          <h2 className="text-lg font-bold mb-1 text-slate-900 font-sans">Analyst Sign In</h2>
+          <p className="text-slate-500 text-xs mb-6 leading-relaxed">
+            Authentication is required to access metrics and manage dynamic AI agent personas.
+          </p>
+
+          {authError && (
+            <div className="bg-red-50 border border-red-200 p-3 rounded-lg text-red-700 text-xs mb-4">
+              {authError}
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Email Address</label>
+              <input 
+                type="email" 
+                required
+                value={emailInput}
+                onChange={e => setEmailInput(e.target.value)}
+                placeholder="hello@logmark-ai.com"
+                className="w-full px-3.5 py-2.5 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Password</label>
+              <input 
+                type="password" 
+                required
+                value={passwordInput}
+                onChange={e => setPasswordInput(e.target.value)}
+                placeholder="••••••••"
+                className="w-full px-3.5 py-2.5 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
+              />
+            </div>
+            
+            <button 
+              type="submit" 
+              disabled={isLoading}
+              className="w-full py-2.5 mt-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition disabled:opacity-55"
+            >
+              {isLoading ? "Authenticating..." : "Authorize Access"}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#fafafb] text-slate-800 font-sans p-6 md:p-12 selection:bg-slate-900 selection:text-white">
       {/* Top Navbar */}
       <div className="flex justify-between items-center mb-12 max-w-6xl mx-auto">
-        <Link href="/" className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 transition">
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to Landing
-        </Link>
+        <div className="flex gap-4 items-center">
+          <Link href="/" className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 transition">
+            <ArrowLeft className="w-3.5 h-3.5" /> Back to Landing
+          </Link>
+          <span className="text-slate-300">|</span>
+          <button onClick={handleLogout} className="text-xs text-slate-500 hover:text-slate-950 transition font-semibold">
+            Sign Out
+          </button>
+        </div>
         <span className="text-[10px] bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full border border-slate-200 font-semibold uppercase tracking-wider">
           Analyst Console
         </span>
@@ -422,6 +576,76 @@ export default function AnalystPortal() {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* System Activity Logs */}
+      <div className="max-w-6xl mx-auto bg-white border border-slate-200 p-8 rounded-xl shadow-sm mt-8">
+        <h2 className="text-lg font-bold text-slate-900 mb-2 font-sans">System Activity Logs</h2>
+        <p className="text-slate-500 text-xs mb-6">
+          Observe real-time operations, invoked agent routing paths, task execution steps, and any transaction failures.
+        </p>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="border-b border-slate-100 text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
+                <th className="py-3 px-4">Timestamp</th>
+                <th className="py-3 px-4">User Email</th>
+                <th className="py-3 px-4">Subject Query</th>
+                <th className="py-3 px-4">Invoked Agent</th>
+                <th className="py-3 px-4">Execution Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activityLogs.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-slate-400 italic">
+                    No activity logs registered in the database.
+                  </td>
+                </tr>
+              ) : (
+                activityLogs.map((log) => (
+                  <tr key={log.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition">
+                    <td className="py-3 px-4 text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                      {new Date(log.created_at).toISOString().replace('T', ' ').substring(0, 19)}
+                    </td>
+                    <td className="py-3 px-4 font-semibold text-slate-700">
+                      {log.profiles?.email || 'System Guest'}
+                    </td>
+                    <td className="py-3 px-4 text-slate-600 truncate max-w-xs" title={log.subject}>
+                      {log.subject}
+                    </td>
+                    <td className="py-3 px-4">
+                      {log.agents?.name ? (
+                        <span className="px-2 py-1 rounded bg-slate-100 border border-slate-200 text-[10px] font-semibold text-slate-700">
+                          {log.agents.name}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 italic">None / Global</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      <div className="flex flex-col gap-1">
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border text-center ${
+                          log.status === 'Completed' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+                          log.status === 'Failed' ? 'bg-rose-50 text-rose-800 border-rose-250' :
+                          'bg-amber-50 text-amber-800 border-amber-200'
+                        }`}>
+                          {log.status}
+                        </span>
+                        {log.error_message && (
+                          <span className="text-[10px] text-rose-600 font-mono max-w-xs break-words whitespace-normal block mt-1 leading-normal" title={log.error_message}>
+                            Error: {log.error_message}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

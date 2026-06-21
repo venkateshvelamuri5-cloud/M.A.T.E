@@ -47,7 +47,9 @@ CREATE TABLE IF NOT EXISTS public.interactions_log (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
     subject VARCHAR(255) NOT NULL,
-    status VARCHAR(50) NOT NULL,
+    status VARCHAR(50) NOT NULL, -- 'Completed', 'Failed', 'Warning'
+    agent_id UUID REFERENCES public.agents(id) ON DELETE SET NULL,
+    error_message TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
@@ -60,8 +62,22 @@ ALTER TABLE public.interactions_log ENABLE ROW LEVEL SECURITY;
 -- Setup Row Level Security Policies
 CREATE POLICY "Allow users to view own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
 CREATE POLICY "Allow users to view own limits" ON public.usage_limits FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Allow users to manage own files" ON public.user_files FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Allow users to view own logs" ON public.interactions_log FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Allow users to manage own files" ON public.user_files FOR ALL 
+USING (
+    auth.uid() = user_id 
+    OR EXISTS (
+        SELECT 1 FROM public.profiles 
+        WHERE profiles.id = auth.uid() AND profiles.role = 'analyst'
+    )
+);
+CREATE POLICY "Allow users to view own logs" ON public.interactions_log FOR SELECT 
+USING (
+    auth.uid() = user_id 
+    OR EXISTS (
+        SELECT 1 FROM public.profiles 
+        WHERE profiles.id = auth.uid() AND profiles.role = 'analyst'
+    )
+);
 
 -- 5. Automate profile creation on signup using PostgreSQL triggers
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -110,6 +126,19 @@ ON storage.objects FOR DELETE
 TO authenticated 
 USING (bucket_id = 'user-spaces' AND (storage.foldername(name))[1] = auth.uid()::text);
 
+-- Storage Policies for knowledge-base bucket (Analysts only)
+CREATE POLICY "Allow analysts to manage knowledge-base bucket" 
+ON storage.objects FOR ALL
+TO authenticated
+USING (
+    bucket_id = 'knowledge-base' 
+    AND EXISTS (
+        SELECT 1 FROM public.profiles 
+        WHERE profiles.id = auth.uid() AND profiles.role = 'analyst'
+    )
+);
+
+
 -- 8. Create Agents Table
 CREATE TABLE IF NOT EXISTS public.agents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -135,5 +164,30 @@ VALUES (
     'Default handler for general maritime queries, sea service guidelines, profile issues, or queries that do not match specialized categories.',
     'You are an agentic maritime representative. Answer the query using the reference maritime data and user documents provided.'
 ) ON CONFLICT DO NOTHING;
+
+-- 12. Seed Default Analyst User
+-- Requires pgcrypto to dynamically hash default password Logmark#2026
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+INSERT INTO auth.users (id, instance_id, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at, role, aud)
+VALUES (
+  '11111111-1111-1111-1111-111111111111',
+  '00000000-0000-0000-0000-000000000000',
+  'hello@logmark-ai.com',
+  crypt('Logmark#2026', gen_salt('bf', 10)),
+  NOW(),
+  '{"provider":"email","providers":["email"]}',
+  '{"role":"analyst"}',
+  NOW(),
+  NOW(),
+  'authenticated',
+  'authenticated'
+) ON CONFLICT (id) DO NOTHING;
+
+-- Ensure trigger-created profile has analyst role and premium plan
+UPDATE public.profiles 
+SET role = 'analyst', subscription_plan = 'premium'
+WHERE id = '11111111-1111-1111-1111-111111111111';
+
 
 
