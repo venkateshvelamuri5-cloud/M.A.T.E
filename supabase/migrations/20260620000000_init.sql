@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     email VARCHAR(255) UNIQUE NOT NULL,
     full_name VARCHAR(255),
     rank VARCHAR(100), -- e.g., Captain, Chief Mate
+    company_name VARCHAR(255),
     role VARCHAR(50) DEFAULT 'user' NOT NULL, -- 'user' or 'analyst'
     subscription_plan VARCHAR(50) DEFAULT 'free' NOT NULL, -- 'free', 'premium'
     stripe_customer_id VARCHAR(255),
@@ -84,8 +85,16 @@ CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
   -- Insert profile
-  INSERT INTO public.profiles (id, email, role, subscription_plan)
-  VALUES (new.id, new.email, 'user', 'free');
+  INSERT INTO public.profiles (id, email, role, subscription_plan, full_name, rank, company_name)
+  VALUES (
+    new.id, 
+    new.email, 
+    'user', 
+    'free', 
+    new.raw_user_meta_data->>'full_name', 
+    new.raw_user_meta_data->>'rank',
+    new.raw_user_meta_data->>'company_name'
+  );
 
   -- Insert usage limits
   INSERT INTO public.usage_limits (user_id, interactions_count, max_interactions)

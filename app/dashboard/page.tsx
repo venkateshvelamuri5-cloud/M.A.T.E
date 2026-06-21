@@ -28,6 +28,8 @@ export default function UserDashboard() {
   const [passwordInput, setPasswordInput] = useState('');
   const [fullNameInput, setFullNameInput] = useState('');
   const [rankInput, setRankInput] = useState('');
+  const [companyInput, setCompanyInput] = useState('');
+  const [vesselEmailInput, setVesselEmailInput] = useState('');
 
   // Dashboard metrics states
   const [interactionsCount, setInteractionsCount] = useState(0);
@@ -77,13 +79,39 @@ export default function UserDashboard() {
       if (!profile) {
         const { data: newProfile } = await supabase
           .from('profiles')
-          .insert({ id: uid, email, role: 'user', subscription_plan: 'free', full_name: fullNameInput || null, rank: rankInput || null })
+          .insert({ 
+            id: uid, 
+            email, 
+            role: 'user', 
+            subscription_plan: 'free', 
+            full_name: fullNameInput || null, 
+            rank: rankInput || null,
+            company_name: companyInput || null,
+            vessel_email: vesselEmailInput || null
+          })
           .select()
           .single();
         profile = newProfile;
       } else {
-        setFullNameInput(profile.full_name || '');
-        setRankInput(profile.rank || '');
+        if (!profile.full_name && fullNameInput) {
+          const { data: updatedProfile } = await supabase
+            .from('profiles')
+            .update({
+              full_name: fullNameInput,
+              rank: rankInput || null,
+              company_name: companyInput || null,
+              vessel_email: vesselEmailInput || null
+            })
+            .eq('id', uid)
+            .select()
+            .single();
+          if (updatedProfile) profile = updatedProfile;
+        } else {
+          setFullNameInput(profile.full_name || '');
+          setRankInput(profile.rank || '');
+          setCompanyInput(profile.company_name || '');
+          setVesselEmailInput(profile.vessel_email || '');
+        }
       }
 
       if (profile) {
@@ -154,7 +182,8 @@ export default function UserDashboard() {
           options: {
             data: {
               full_name: fullNameInput,
-              rank: rankInput
+              rank: rankInput,
+              company_name: companyInput
             }
           }
         });
@@ -185,12 +214,41 @@ export default function UserDashboard() {
     }
   };
 
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userId) return;
+    setStatusMsg("Saving workspace settings...");
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: fullNameInput || null,
+          company_name: companyInput || null,
+          rank: rankInput || null,
+          vessel_email: vesselEmailInput || null
+        })
+        .eq('id', userId);
+
+      if (error) throw error;
+      setStatusMsg("Workspace settings updated successfully.");
+      fetchUserData(userId, emailInput);
+    } catch (err) {
+      console.error(err);
+      setStatusMsg(`Failed to save settings: ${(err as Error).message}`);
+    }
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setIsLoggedIn(false);
     setUserId(null);
     setEmailInput('');
     setPasswordInput('');
+    setFullNameInput('');
+    setRankInput('');
+    setCompanyInput('');
+    setVesselEmailInput('');
     setUploadedFiles([]);
     setInteractionHistory([]);
     setStatusMsg("Signed out of your workspace.");
@@ -343,6 +401,17 @@ export default function UserDashboard() {
                   />
                 </div>
                 <div>
+                  <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Company Name</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={companyInput}
+                    onChange={e => setCompanyInput(e.target.value)}
+                    placeholder="Merchant Shipping Ltd"
+                    className="w-full px-3.5 py-2 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
+                  />
+                </div>
+                <div>
                   <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Mariner Rank</label>
                   <input 
                     type="text" 
@@ -431,8 +500,10 @@ export default function UserDashboard() {
         <div className="lg:col-span-1 space-y-6">
           <div className="bg-white border border-slate-200 p-8 rounded-xl shadow-sm">
             <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Authenticated Officer</h3>
-            <div className="text-xs font-semibold text-slate-800 truncate mb-1">{fullNameInput || 'Officer'}</div>
-            <div className="text-[10px] text-slate-400 italic mb-4">{rankInput || 'Unspecified Rank'}</div>
+            <div className="text-xs font-semibold text-slate-800 truncate mb-0.5">{fullNameInput || 'Officer'}</div>
+            <div className="text-[10px] text-slate-550 font-medium mb-0.5">{rankInput || 'Unspecified Rank'}</div>
+            <div className="text-[10px] text-slate-500 mb-1">{companyInput ? `Company: ${companyInput}` : 'No Company Configured'}</div>
+            <div className="text-[10px] text-slate-400 italic mb-4">{vesselEmailInput ? `Vessel Email: ${vesselEmailInput}` : 'No Vessel Email Configured'}</div>
 
             <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Dedicated Storage</h3>
             <div className="flex items-baseline gap-2 mb-6">
@@ -467,6 +538,56 @@ export default function UserDashboard() {
             )}
           </div>
 
+          {/* Workspace Settings Card */}
+          <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
+            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-4">Workspace Settings</h3>
+            <form onSubmit={handleSaveSettings} className="space-y-3.5">
+              <div>
+                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Full Name</label>
+                <input 
+                  type="text" 
+                  value={fullNameInput}
+                  onChange={e => setFullNameInput(e.target.value)}
+                  className="w-full px-2.5 py-1.5 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
+                />
+              </div>
+              <div>
+                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Company Name</label>
+                <input 
+                  type="text" 
+                  value={companyInput}
+                  onChange={e => setCompanyInput(e.target.value)}
+                  className="w-full px-2.5 py-1.5 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
+                />
+              </div>
+              <div>
+                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Mariner Rank</label>
+                <input 
+                  type="text" 
+                  value={rankInput}
+                  onChange={e => setRankInput(e.target.value)}
+                  className="w-full px-2.5 py-1.5 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
+                />
+              </div>
+              <div>
+                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Vessel Email (For Webhooks)</label>
+                <input 
+                  type="email" 
+                  value={vesselEmailInput}
+                  onChange={e => setVesselEmailInput(e.target.value)}
+                  placeholder="vessel@shipname.com"
+                  className="w-full px-2.5 py-1.5 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
+                />
+              </div>
+              <button 
+                type="submit" 
+                className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-semibold text-[10px] uppercase tracking-wider transition"
+              >
+                Save Settings
+              </button>
+            </form>
+          </div>
+
           {/* Onboarding Guide Card */}
           <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
             <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">Onboarding Instructions</h3>
@@ -474,7 +595,7 @@ export default function UserDashboard() {
               <p>To verify logs or endorsement credentials: </p>
               <ol className="list-decimal list-inside space-y-1.5 pl-1">
                 <li>Attach your voyage logs as PDF.</li>
-                <li>Email them to: <strong className="text-slate-800 select-all">verify@mate-navy.com</strong>.</li>
+                <li>Email them to: <strong className="text-slate-800 select-all">verify@mate-navy.com</strong> from your registered email or configured vessel email.</li>
                 <li>M.A.T.E will parse context and send the PDF response back.</li>
               </ol>
             </div>

@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
       let { data: profile, error: profileErr } = await supabase
         .from('profiles')
         .select('id, subscription_plan')
-        .eq('email', from)
+        .or(`email.eq.${from},vessel_email.eq.${from}`)
         .maybeSingle();
 
       if (profileErr) {
