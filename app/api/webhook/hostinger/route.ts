@@ -6,7 +6,7 @@ import { SmtpService } from '../../../../src/services/smtp';
 
 /**
  * POST handler for Hostinger Webhook
- * Fully integrated with Supabase DB & Storage
+ * Configured with flexible body keys parsing to accept multiple email webhook payload formats.
  */
 export async function POST(req: NextRequest) {
   const gemini = new GeminiService();
@@ -22,10 +22,23 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Parse body fields
-    const { from, subject, bodyText, promptQuery, requestDocType } = await req.json();
+    const body = await req.json();
+    console.log('Received raw webhook payload body:', JSON.stringify(body));
+
+    // Support flexible email parameters mapping:
+    // Hostinger and various transactional mail webhooks pass keys under different names
+    const from = body.from || body.sender || body.fromAddress || body.envelope?.from;
+    const subject = body.subject || body.title || 'M.A.T.E Maritime Inquiry';
+    const bodyText = body.bodyText || body.text || body.body || body.html || body.content;
+    const promptQuery = body.promptQuery || body.query || body.ask || body.subject;
+    const requestDocType = body.requestDocType || body.docType || 'pdf'; // Default to pdf responses
 
     if (!from || !bodyText) {
-      return NextResponse.json({ error: 'Bad Request: Missing from or bodyText' }, { status: 400 });
+      console.warn(`Validation failed: Missing from (${from}) or bodyText (${bodyText ? 'Present' : 'Missing'})`);
+      return NextResponse.json({ 
+        error: 'Bad Request: Missing sender address or email text body', 
+        receivedPayload: { from, subject, bodyText: bodyText ? 'Present' : 'Missing' } 
+      }, { status: 400 });
     }
 
     let userId: string | null = null;
@@ -34,7 +47,6 @@ export async function POST(req: NextRequest) {
 
     // 3. Connect to Supabase to verify user profiles and limits
     try {
-      // Fetch profile matching sender email
       let { data: profile, error: profileErr } = await supabase
         .from('profiles')
         .select('id, subscription_plan')
@@ -45,15 +57,12 @@ export async function POST(req: NextRequest) {
         console.warn('Supabase profile query encountered error:', profileErr.message);
       }
 
-      // If user profile does not exist, automatically enroll in the Community free space
       if (!profile) {
         console.log(`User profile for ${from} not found. Creating a new community profile...`);
-        
-        // Note: For simulation purposes, we insert directly. In full production, this maps to auth.users trigger
         const { data: newProfile, error: createErr } = await supabase
           .from('profiles')
           .insert({
-            id: '00000000-0000-0000-0000-' + Math.random().toString(36).substring(2, 14).padEnd(12, '0'), // mock UUID placeholder
+            id: '00000000-0000-0000-0000-' + Math.random().toString(36).substring(2, 14).padEnd(12, '0'),
             email: from,
             role: 'user',
             subscription_plan: 'free'
@@ -66,7 +75,6 @@ export async function POST(req: NextRequest) {
         }
         profile = newProfile;
 
-        // Initialize user interaction limit (10 free)
         const { error: limitErr } = await supabase
           .from('usage_limits')
           .insert({
@@ -82,7 +90,6 @@ export async function POST(req: NextRequest) {
 
       userId = profile.id;
 
-      // Fetch user interaction limit records
       const { data: limits, error: limitQueryErr } = await supabase
         .from('usage_limits')
         .select('interactions_count, max_interactions')
@@ -100,12 +107,10 @@ export async function POST(req: NextRequest) {
 
     } catch (dbError) {
       console.error('Supabase DB connection failed, falling back to simulated limits:', (dbError as Error).message);
-      // Fallback variables to ensure robustness if credentials aren't set yet
       limitCount = 2;
       limitMax = 10;
     }
 
-    // Early limits check (10 interactions limit boundary)
     if (limitCount >= limitMax) {
       return NextResponse.json({ error: 'Limit exceeded: 10/10 community interactions used. Upgrade via Stripe.' }, { status: 403 });
     }
@@ -113,13 +118,11 @@ export async function POST(req: NextRequest) {
     // 4. Scrub PII and fetch context using Gemini
     const scrubbedText = await gemini.cleanAndScrubText(bodyText);
 
-    // Ground query with knowledge files if requested
     let processedResult = scrubbedText;
     let fileReferenceContext = '';
 
     if (userId) {
       try {
-        // Query user's custom template configurations from Supabase user_files
         const { data: fileRef } = await supabase
           .from('user_files')
           .select('storage_path, name')
@@ -130,7 +133,6 @@ export async function POST(req: NextRequest) {
 
         if (fileRef) {
           console.log(`Found reference knowledge document: ${fileRef.name}`);
-          // For serverless runtimes, we download reference contents from Supabase Storage
           const { data: fileBlob, error: downloadErr } = await supabase.storage
             .from('knowledge-base')
             .download(fileRef.storage_path);
@@ -149,7 +151,7 @@ export async function POST(req: NextRequest) {
       processedResult = await gemini.runGroundedQuery(promptQuery, `${scrubbedText}\n\n${fileReferenceContext}`);
     }
 
-    // 5. Generate documents (overlaying on custom PDF templates from Supabase Storage if available)
+    // 5. Generate documents
     let letterheadBuffer: Buffer | undefined;
     if (userId && requestDocType === 'pdf') {
       try {
@@ -195,19 +197,19 @@ export async function POST(req: NextRequest) {
     // 6. Send Outbound SMTP Email response back
     const mailResponse = await smtp.sendMail({
       to: from,
-      subject: `Re: ${subject || 'Response Inquiry'}`,
+      subject: `Re: ${subject}`,
       text: `Hello,\n\nHere is the requested information:\n\n${processedResult}\n\nThank you for using M.A.T.E.`,
       attachments: emailAttachments
     });
 
-    // 7. Increment interaction usage limits counter
+    // 7. Increment interaction usage limits counter & log transaction
     if (userId) {
       try {
         await supabase
           .from('usage_limits')
           .update({ interactions_count: limitCount + 1 })
           .eq('user_id', userId);
-        // Insert log history record
+
         await supabase
           .from('interactions_log')
           .insert({
@@ -215,6 +217,7 @@ export async function POST(req: NextRequest) {
             subject: subject || 'Response Inquiry',
             status: 'Completed'
           });
+
         console.log(`Updated interaction limit counts to ${limitCount + 1}`);
       } catch (updErr) {
         console.warn('Could not update usage counters:', (updErr as Error).message);
