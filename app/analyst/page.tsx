@@ -198,10 +198,13 @@ export default function AnalystPortal() {
 
       if (uploadErr) throw uploadErr;
 
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentUserId = session?.user?.id || '11111111-1111-1111-1111-111111111111';
+
       const { error: dbErr } = await supabase
         .from('user_files')
         .insert({
-          user_id: '00000000-0000-0000-0000-000000000000',
+          user_id: currentUserId,
           name: file.name,
           storage_path: storagePath,
           file_type: 'knowledge_base',
