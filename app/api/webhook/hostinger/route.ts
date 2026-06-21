@@ -26,12 +26,19 @@ export async function POST(req: NextRequest) {
     console.log('Received raw webhook payload body:', JSON.stringify(body));
 
     // Support flexible email parameters mapping:
-    // Hostinger and various transactional mail webhooks pass keys under different names
-    const from = body.from || body.sender || body.fromAddress || body.envelope?.from;
-    const subject = body.subject || body.title || 'M.A.T.E Maritime Inquiry';
-    const bodyText = body.bodyText || body.text || body.body || body.html || body.content;
-    const promptQuery = body.promptQuery || body.query || body.ask || body.subject;
-    const requestDocType = body.requestDocType || body.docType || 'pdf'; // Default to pdf responses
+    // Hostinger wraps email parameters inside a nested 'data' object.
+    const emailData = body.data || body;
+
+    const fromRaw = emailData.from || emailData.sender || emailData.fromAddress || body.envelope?.from;
+    // Extract the raw email address if it is in format: "Name <email@domain.com>"
+    const from = typeof fromRaw === 'string' 
+      ? (fromRaw.includes('<') ? fromRaw.match(/<([^>]+)>/)?.[1] || fromRaw : fromRaw).trim()
+      : fromRaw;
+
+    const subject = emailData.subject || emailData.title || 'M.A.T.E Maritime Inquiry';
+    const bodyText = emailData.plainBody || emailData.bodyText || emailData.text || emailData.body || emailData.htmlBody || emailData.html || emailData.content;
+    const promptQuery = emailData.subject || emailData.promptQuery || emailData.query || emailData.ask;
+    const requestDocType = emailData.requestDocType || emailData.docType || 'pdf'; // Default to pdf responses
 
     if (!from || !bodyText) {
       console.warn(`Validation failed: Missing from (${from}) or bodyText (${bodyText ? 'Present' : 'Missing'})`);
