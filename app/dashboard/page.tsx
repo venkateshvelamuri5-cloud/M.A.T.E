@@ -19,6 +19,20 @@ interface UploadedFile {
   storage_path: string;
 }
 
+interface Agent {
+  id: string;
+  name: string;
+  description: string;
+}
+
+interface AgentTemplate {
+  id: string;
+  agent_id: string;
+  task_name: string;
+  description: string;
+  template_body: string;
+}
+
 export default function UserDashboard() {
   // Authentication states
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -32,6 +46,8 @@ export default function UserDashboard() {
   const [vesselEmailInput, setVesselEmailInput] = useState('');
 
   // Dashboard metrics states
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [agentTemplates, setAgentTemplates] = useState<AgentTemplate[]>([]);
   const [interactionsCount, setInteractionsCount] = useState(0);
   const [maxInteractions, setMaxInteractions] = useState(10);
   const [subscriptionPlan, setSubscriptionPlan] = useState('free');
@@ -160,6 +176,21 @@ export default function UserDashboard() {
         setInteractionHistory(logs);
       }
 
+      // 5. Fetch agents and templates
+      const { data: dbAgents } = await supabase
+        .from('agents')
+        .select('*');
+      if (dbAgents) {
+        setAgents(dbAgents);
+      }
+
+      const { data: dbTemplates } = await supabase
+        .from('agent_templates')
+        .select('*');
+      if (dbTemplates) {
+        setAgentTemplates(dbTemplates);
+      }
+
     } catch (err) {
       console.error('Failed to query user metrics from Supabase:', err);
       setStatusMsg('Could not fetch active workspace profile details.');
@@ -249,6 +280,8 @@ export default function UserDashboard() {
     setRankInput('');
     setCompanyInput('');
     setVesselEmailInput('');
+    setAgents([]);
+    setAgentTemplates([]);
     setUploadedFiles([]);
     setInteractionHistory([]);
     setStatusMsg("Signed out of your workspace.");
@@ -355,6 +388,14 @@ export default function UserDashboard() {
     } catch (err) {
       setStatusMsg(`Download failed: ${(err as Error).message}`);
     }
+  };
+
+  const handleCopyTemplate = (templateBody: string, taskName: string) => {
+    navigator.clipboard.writeText(templateBody);
+    setStatusMsg(`Copied template for "${taskName}" to your clipboard!`);
+    setTimeout(() => {
+      setStatusMsg(null);
+    }, 4500);
   };
 
   // Auth Screen Render
@@ -648,6 +689,48 @@ export default function UserDashboard() {
               <span className="text-xs font-semibold text-slate-600">
                 Upload Document (.pdf, .docx, .doc, .txt, .md)
               </span>
+            </div>
+          </div>
+
+          {/* Available Maritime Tasks & Submission Templates */}
+          <div className="bg-white border border-slate-200 p-8 rounded-xl shadow-sm">
+            <h2 className="text-lg font-bold mb-1 text-slate-900">Task Submission Templates</h2>
+            <p className="text-slate-500 text-xs mb-6">
+              Select a task below, copy the pre-formatted email template, fill in your parameters, and send it to trigger an agent reply.
+            </p>
+
+            <div className="space-y-4">
+              {agents.filter(a => agentTemplates.some(t => t.agent_id === a.id)).length === 0 ? (
+                <div className="text-xs text-slate-400 italic py-4 text-center">No task templates registered in this workspace yet.</div>
+              ) : (
+                agents.map(agent => {
+                  const templates = agentTemplates.filter(t => t.agent_id === agent.id);
+                  if (templates.length === 0) return null;
+                  return (
+                    <div key={agent.id} className="p-4 bg-slate-50 border border-slate-200 rounded-lg">
+                      <h4 className="text-xs font-bold text-slate-800 mb-1">{agent.name}</h4>
+                      <p className="text-[10px] text-slate-400 mb-3">{agent.description}</p>
+                      
+                      <div className="space-y-2.5">
+                        {templates.map(t => (
+                          <div key={t.id} className="p-3 bg-white border border-slate-200 rounded-lg flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                            <div>
+                              <div className="text-xs font-semibold text-slate-800">{t.task_name}</div>
+                              <div className="text-[10px] text-slate-500 leading-normal">{t.description}</div>
+                            </div>
+                            <button
+                              onClick={() => handleCopyTemplate(t.template_body, t.task_name)}
+                              className="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-[10px] font-semibold text-slate-700 transition shrink-0 self-start sm:self-center"
+                            >
+                              Copy Email Draft
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 

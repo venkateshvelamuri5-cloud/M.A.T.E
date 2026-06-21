@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
   let from = '';
   let limitCount = 0;
   let limitMax = 10;
+  let webhookId: string | null = null;
 
   try {
     // 1. Verify signatures if webhook secret is configured
@@ -31,6 +32,25 @@ export async function POST(req: NextRequest) {
     // 2. Parse body fields
     const body = await req.json();
     console.log('Received raw webhook payload body:', JSON.stringify(body));
+    
+    webhookId = body.id || body.data?.id || body.messageId || body.data?.messageId;
+
+    if (webhookId) {
+      try {
+        const { data: existingLog } = await supabase
+          .from('interactions_log')
+          .select('id')
+          .eq('webhook_id', webhookId)
+          .maybeSingle();
+
+        if (existingLog) {
+          console.log(`Duplicate webhook detected (ID: ${webhookId}). Skipping execution.`);
+          return NextResponse.json({ success: true, message: 'Duplicate webhook skipped' });
+        }
+      } catch (checkErr) {
+        console.warn('Idempotency check query failed, proceeding anyway:', (checkErr as Error).message);
+      }
+    }
 
     // Support flexible email parameters mapping:
     // Hostinger wraps email parameters inside a nested 'data' object.
@@ -285,7 +305,8 @@ export async function POST(req: NextRequest) {
             user_id: userId,
             subject: subject || 'Response Inquiry',
             status: 'Completed',
-            agent_id: selectedAgentId
+            agent_id: selectedAgentId,
+            webhook_id: webhookId
           });
 
         console.log(`Updated interaction limit counts to ${limitCount + 1}`);
@@ -314,7 +335,8 @@ export async function POST(req: NextRequest) {
             subject: subject || 'Failed Inquiry',
             status: 'Failed',
             agent_id: selectedAgentId,
-            error_message: (error as Error).message
+            error_message: (error as Error).message,
+            webhook_id: webhookId
           });
       } catch (logErr) {
         console.warn('Could not log webhook failure in DB:', (logErr as Error).message);

@@ -43,7 +43,6 @@ CREATE TABLE IF NOT EXISTS public.user_files (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
--- 4. Create Interactions Log Table (stores transaction histories)
 CREATE TABLE IF NOT EXISTS public.interactions_log (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
@@ -51,6 +50,7 @@ CREATE TABLE IF NOT EXISTS public.interactions_log (
     status VARCHAR(50) NOT NULL, -- 'Completed', 'Failed', 'Warning'
     agent_id UUID REFERENCES public.agents(id) ON DELETE SET NULL,
     error_message TEXT,
+    webhook_id VARCHAR(255) UNIQUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
@@ -157,14 +157,28 @@ CREATE TABLE IF NOT EXISTS public.agents (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
+-- Create Agent Templates Table
+CREATE TABLE IF NOT EXISTS public.agent_templates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    agent_id UUID REFERENCES public.agents(id) ON DELETE CASCADE NOT NULL,
+    task_name VARCHAR(255) NOT NULL,
+    description TEXT,
+    template_body TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
 -- 9. Add agent_id column to user_files referencing agents
 ALTER TABLE public.user_files ADD COLUMN IF NOT EXISTS agent_id UUID REFERENCES public.agents(id) ON DELETE SET NULL;
 
 -- 10. Enable RLS for agents table and add policies
 ALTER TABLE public.agents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agent_templates ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow public read access to agents" ON public.agents FOR SELECT USING (true);
 CREATE POLICY "Allow service role or analysts full control over agents" ON public.agents FOR ALL USING (true);
+
+CREATE POLICY "Allow public read access to agent_templates" ON public.agent_templates FOR SELECT USING (true);
+CREATE POLICY "Allow service role or analysts full control over agent_templates" ON public.agent_templates FOR ALL USING (true);
 
 -- 11. Insert default fallback agent
 INSERT INTO public.agents (name, description, system_prompt)

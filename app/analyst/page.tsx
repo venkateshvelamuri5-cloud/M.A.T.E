@@ -20,6 +20,14 @@ interface Agent {
   system_prompt: string;
 }
 
+interface AgentTemplate {
+  id: string;
+  agent_id: string;
+  task_name: string;
+  description: string;
+  template_body: string;
+}
+
 interface ActivityLog {
   id: string;
   created_at: string;
@@ -49,9 +57,14 @@ export default function AnalystPortal() {
 
   // Agent Management states
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [agentTemplates, setAgentTemplates] = useState<AgentTemplate[]>([]);
   const [newAgentName, setNewAgentName] = useState('');
   const [newAgentDesc, setNewAgentDesc] = useState('');
   const [newAgentPrompt, setNewAgentPrompt] = useState('');
+  const [newTemplateAgentId, setNewTemplateAgentId] = useState('');
+  const [newTemplateTaskName, setNewTemplateTaskName] = useState('');
+  const [newTemplateDesc, setNewTemplateDesc] = useState('');
+  const [newTemplateBody, setNewTemplateBody] = useState('');
   const [selectedAgentForUpload, setSelectedAgentForUpload] = useState<string>('global');
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
 
@@ -88,6 +101,13 @@ export default function AnalystPortal() {
         .select('*');
       if (dbAgents) {
         setAgents(dbAgents);
+      }
+
+      const { data: dbTemplates } = await supabase
+        .from('agent_templates')
+        .select('*');
+      if (dbTemplates) {
+        setAgentTemplates(dbTemplates);
       }
 
       const { data: logs } = await supabase
@@ -244,6 +264,47 @@ export default function AnalystPortal() {
     } catch (err) {
       console.error(err);
       setStatusMsg(`Failed to create agent: ${(err as Error).message}`);
+    }
+  };
+
+  const handleCreateTemplate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTemplateAgentId || !newTemplateTaskName || !newTemplateBody) return;
+    setStatusMsg('Creating template...');
+    try {
+      const { error } = await supabase
+        .from('agent_templates')
+        .insert({
+          agent_id: newTemplateAgentId,
+          task_name: newTemplateTaskName,
+          description: newTemplateDesc || null,
+          template_body: newTemplateBody
+        });
+      if (error) throw error;
+      setStatusMsg(`Successfully created task template "${newTemplateTaskName}"`);
+      setNewTemplateTaskName('');
+      setNewTemplateDesc('');
+      setNewTemplateBody('');
+      fetchAnalyticsAndFiles();
+    } catch (err) {
+      console.error(err);
+      setStatusMsg(`Failed to create template: ${(err as Error).message}`);
+    }
+  };
+
+  const handleDeleteTemplate = async (id: string, name: string) => {
+    setStatusMsg(`Deleting template "${name}"...`);
+    try {
+      const { error } = await supabase
+        .from('agent_templates')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+      setStatusMsg(`Successfully deleted template "${name}"`);
+      fetchAnalyticsAndFiles();
+    } catch (err) {
+      console.error(err);
+      setStatusMsg(`Failed to delete template: ${(err as Error).message}`);
     }
   };
 
@@ -551,6 +612,61 @@ export default function AnalystPortal() {
           </div>
         </form>
 
+        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Add Task Template to Agent</h3>
+        <form onSubmit={handleCreateTemplate} className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 pb-8 border-b border-slate-100">
+          <div>
+            <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Link to Agent</label>
+            <select
+              required
+              value={newTemplateAgentId}
+              onChange={e => setNewTemplateAgentId(e.target.value)}
+              className="w-full px-3.5 py-2.5 border border-slate-200 focus:border-slate-455 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
+            >
+              <option value="">Select Agent...</option>
+              {agents.map(a => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Task Name</label>
+            <input 
+              type="text" 
+              required
+              value={newTemplateTaskName}
+              onChange={e => setNewTemplateTaskName(e.target.value)}
+              placeholder="Request Risk Letter"
+              className="w-full px-3.5 py-2.5 border border-slate-200 focus:border-slate-455 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Task Description</label>
+            <input 
+              type="text" 
+              value={newTemplateDesc}
+              onChange={e => setNewTemplateDesc(e.target.value)}
+              placeholder="For voyage planning safety reports"
+              className="w-full px-3.5 py-2.5 border border-slate-200 focus:border-slate-455 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Email Draft Template</label>
+            <textarea 
+              required
+              value={newTemplateBody}
+              onChange={e => setNewTemplateBody(e.target.value)}
+              placeholder="Vessel: ______&#10;Cargo: ______"
+              rows={2}
+              className="w-full px-3.5 py-2 border border-slate-200 focus:border-slate-455 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition resize-none"
+            />
+          </div>
+          <div className="md:col-span-4 flex justify-end">
+            <button type="submit" className="px-5 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition">
+              Register Task Template
+            </button>
+          </div>
+        </form>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {agents.map(agent => (
             <div key={agent.id} className="p-6 bg-slate-50 border border-slate-200 rounded-xl relative hover:border-slate-350 transition flex flex-col justify-between">
@@ -575,6 +691,31 @@ export default function AnalystPortal() {
                 </p>
                 <div className="bg-white border border-slate-200 p-3.5 rounded-lg text-[10px] text-slate-500 font-mono overflow-auto max-h-32 leading-relaxed">
                   {agent.system_prompt}
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                  <h5 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Linked Task Templates</h5>
+                  {agentTemplates.filter(t => t.agent_id === agent.id).length === 0 ? (
+                    <div className="text-[10px] text-slate-450 italic">No task templates registered.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {agentTemplates.filter(t => t.agent_id === agent.id).map(t => (
+                        <div key={t.id} className="p-2.5 bg-white border border-slate-200 rounded-lg flex justify-between items-center text-[11px]">
+                          <div>
+                            <div className="font-semibold text-slate-800">{t.task_name}</div>
+                            <div className="text-[10px] text-slate-400">{t.description}</div>
+                          </div>
+                          <button 
+                            onClick={() => handleDeleteTemplate(t.id, t.task_name)}
+                            className="p-1 text-slate-400 hover:text-red-600 transition"
+                            title="Delete template"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
