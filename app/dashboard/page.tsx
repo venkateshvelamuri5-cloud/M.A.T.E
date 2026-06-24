@@ -1,14 +1,17 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { supabase } from '../../src/supabase-client';
-import { Upload, Mail, CreditCard, Shield, AlertCircle, CheckCircle, Anchor, LogIn, UserPlus, LogOut, FileText, History, ArrowLeft, Download } from 'lucide-react';
+import { Upload, Mail, CreditCard, Shield, AlertCircle, CheckCircle2, Anchor, LogIn, UserPlus, LogOut, FileText, History, ArrowLeft, Download, Clipboard, Server, Settings, ChevronRight } from 'lucide-react';
 
 interface InteractionLog {
   id: string;
   subject: string;
   status: string;
   created_at: string;
+  email_request?: string;
+  email_response?: string;
 }
 
 interface UploadedFile {
@@ -34,6 +37,7 @@ interface AgentTemplate {
 }
 
 export default function UserDashboard() {
+  const router = useRouter();
   // Authentication states
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -55,6 +59,7 @@ export default function UserDashboard() {
   const [interactionHistory, setInteractionHistory] = useState<InteractionLog[]>([]);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedLog, setSelectedLog] = useState<InteractionLog | null>(null);
 
   const STORAGE_LIMIT_MB = 25;
 
@@ -73,9 +78,12 @@ export default function UserDashboard() {
           setUserId(session.user.id);
           setEmailInput(session.user.email || '');
           fetchUserData(session.user.id, session.user.email || '');
+        } else {
+          router.push('/login');
         }
       } catch (err) {
         console.warn("Auth check failed, check your Supabase credentials.");
+        router.push('/login');
       }
     };
     checkSession();
@@ -214,7 +222,8 @@ export default function UserDashboard() {
             data: {
               full_name: fullNameInput,
               rank: rankInput,
-              company_name: companyInput
+              company_name: companyInput,
+              vessel_email: vesselEmailInput
             }
           }
         });
@@ -239,12 +248,15 @@ export default function UserDashboard() {
         }
       }
     } catch (err) {
-      setStatusMsg(`Auth failed: ${(err as Error).message}`);
+      console.error("Auth error occurred:", err);
+      const errMsg = err && typeof err === 'object'
+        ? (err as any).message || (err as any).error_description || JSON.stringify(err)
+        : String(err);
+      setStatusMsg(`Auth failed: ${errMsg}`);
     } finally {
       setIsLoading(false);
     }
   };
-
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -294,7 +306,6 @@ export default function UserDashboard() {
     const file = e.target.files[0];
     const fileSizeMB = parseFloat((file.size / (1024 * 1024)).toFixed(2));
     
-    // Strict file type validation
     const allowedExtensions = ['.pdf', '.docx', '.doc', '.txt', '.md'];
     const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
     
@@ -311,7 +322,6 @@ export default function UserDashboard() {
     setStatusMsg('Uploading file to storage bucket...');
 
     try {
-      // 1. Upload to bucket under isolated user directory path: spaces/{userId}/{fileName}
       const storagePath = `${userId}/${Date.now()}_${file.name}`;
       const { error: uploadErr } = await supabase.storage
         .from('user-spaces')
@@ -319,20 +329,18 @@ export default function UserDashboard() {
 
       if (uploadErr) throw uploadErr;
 
-      // 2. Register file reference in user_files DB Table
       const { error: dbErr } = await supabase
         .from('user_files')
         .insert({
           user_id: userId,
           name: file.name,
           storage_path: storagePath,
-          file_type: fileExtension.substring(1), // e.g. 'pdf', 'docx'
+          file_type: fileExtension.substring(1),
           file_size_mb: fileSizeMB
         });
 
       if (dbErr) throw dbErr;
 
-      // 3. Add to interaction history log
       await supabase.from('interactions_log').insert({
         user_id: userId,
         subject: `Uploaded document: ${file.name}`,
@@ -401,120 +409,10 @@ export default function UserDashboard() {
   // Auth Screen Render
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-[#fafafb] text-slate-800 flex flex-col justify-center items-center font-sans p-6">
-        <Link href="/" className="flex items-center gap-2 mb-8">
-          <Anchor className="w-8 h-8 text-slate-700" />
-          <span className="text-xl font-bold tracking-tight text-slate-900">M.A.T.E</span>
-        </Link>
-
-        <div className="w-full max-w-sm bg-white border border-slate-200 p-8 rounded-xl shadow-sm relative">
-          <Link href="/" className="absolute top-4 right-4 text-slate-400 hover:text-slate-900 transition text-[10px] font-semibold flex items-center gap-1">
-            <ArrowLeft className="w-3 h-3" /> Home
-          </Link>
-
-          <h2 className="text-lg font-bold mb-1 text-slate-900">
-            {authMode === 'signin' ? "Sign In to M.A.T.E" : "Register Community Space"}
-          </h2>
-          <p className="text-slate-500 text-xs mb-6 leading-relaxed">
-            {authMode === 'signin' 
-              ? "Access your isolated certificate and voyage logs space." 
-              : "Register to initialize your dedicated 25MB file space."}
-          </p>
-
-          {statusMsg && (
-            <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg text-slate-650 text-xs mb-4">
-              {statusMsg}
-            </div>
-          )}
-
-          <form onSubmit={handleAuthSubmit} className="space-y-4">
-            {authMode === 'signup' && (
-              <>
-                <div>
-                  <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Full Name</label>
-                  <input 
-                    type="text" 
-                    required
-                    value={fullNameInput}
-                    onChange={e => setFullNameInput(e.target.value)}
-                    placeholder="Capt. John Doe"
-                    className="w-full px-3.5 py-2 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Company Name</label>
-                  <input 
-                    type="text" 
-                    required
-                    value={companyInput}
-                    onChange={e => setCompanyInput(e.target.value)}
-                    placeholder="Merchant Shipping Ltd"
-                    className="w-full px-3.5 py-2 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Mariner Rank</label>
-                  <input 
-                    type="text" 
-                    required
-                    value={rankInput}
-                    onChange={e => setRankInput(e.target.value)}
-                    placeholder="Chief Mate"
-                    className="w-full px-3.5 py-2 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
-                  />
-                </div>
-              </>
-            )}
-
-            <div>
-              <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Email Address</label>
-              <input 
-                type="email" 
-                required
-                value={emailInput}
-                onChange={e => setEmailInput(e.target.value)}
-                placeholder="officer@merchantnavy.com"
-                className="w-full px-3.5 py-2 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Password</label>
-              <input 
-                type="password" 
-                required
-                value={passwordInput}
-                onChange={e => setPasswordInput(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-3.5 py-2 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
-              />
-            </div>
-            
-            <button 
-              type="submit" 
-              disabled={isLoading}
-              className="w-full py-2.5 mt-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition disabled:opacity-55"
-            >
-              {isLoading ? "Processing..." : authMode === 'signin' ? "Sign In" : "Register and Open Workspace"}
-            </button>
-          </form>
-
-          <div className="mt-6 pt-6 border-t border-slate-100 text-center text-xs text-slate-500">
-            {authMode === 'signin' ? (
-              <span>
-                Need an officer workspace?{" "}
-                <button onClick={() => { setAuthMode('signup'); setStatusMsg(null); }} className="text-slate-850 font-bold hover:underline">
-                  Create space
-                </button>
-              </span>
-            ) : (
-              <span>
-                Already registered?{" "}
-                <button onClick={() => { setAuthMode('signin'); setStatusMsg(null); }} className="text-slate-850 font-bold hover:underline">
-                  Sign in here
-                </button>
-              </span>
-            )}
-          </div>
+      <div className="min-h-screen bg-background text-foreground flex flex-col justify-center items-center font-sans p-6 selection:bg-gold selection:text-deep">
+        <div className="flex flex-col items-center">
+          <img src="/logo.jpeg" alt="M.A.T.E logo" width="64" height="64" className="rounded-xl border border-border/80 shadow-sm animate-pulse mb-4" />
+          <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">Verifying Session...</p>
         </div>
       </div>
     );
@@ -522,49 +420,51 @@ export default function UserDashboard() {
 
   // Dashboard Screen Render
   return (
-    <div className="min-h-screen bg-[#fafafb] text-slate-800 font-sans p-6 md:p-12 selection:bg-slate-900 selection:text-white">
-      <div className="flex justify-between items-center mb-12 max-w-6xl mx-auto">
-        <Link href="/" className="flex items-center gap-2">
-          <Anchor className="w-6 h-6 text-slate-700" />
-          <span className="text-base font-bold tracking-tight text-slate-900">M.A.T.E Space</span>
+    <div className="min-h-screen bg-background text-foreground font-sans p-6 md:p-12 selection:bg-gold selection:text-deep relative">
+      
+      {/* Top Navbar */}
+      <div className="flex justify-between items-center mb-12 max-w-6xl mx-auto border-b border-border/60 pb-6 relative z-10">
+        <Link href="/" className="flex items-center gap-2.5 group">
+          <img src="/logo.jpeg" alt="M.A.T.E logo" width="32" height="32" className="rounded" />
+          <span className="text-base font-black tracking-tight text-deep uppercase font-display">M.A.T.E Space</span>
         </Link>
         <button 
           onClick={handleLogout}
-          className="text-xs text-slate-500 hover:text-slate-900 transition flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white"
+          className="text-xs text-foreground hover:bg-secondary transition flex items-center gap-1.5 px-4 py-2.5 rounded-full border border-border font-bold uppercase tracking-wider"
         >
-          <LogOut className="w-3.5 h-3.5" /> Sign Out
+          <LogOut className="w-3.5 h-3.5 text-gold" /> Sign Out
         </button>
       </div>
 
-      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 relative z-10">
         
+        {/* Left column (Profile, Settings, Storage) */}
         <div className="lg:col-span-1 space-y-6">
-          <div className="bg-white border border-slate-200 p-8 rounded-xl shadow-sm">
-            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Authenticated Officer</h3>
-            <div className="text-xs font-semibold text-slate-800 truncate mb-0.5">{fullNameInput || 'Officer'}</div>
-            <div className="text-[10px] text-slate-550 font-medium mb-0.5">{rankInput || 'Unspecified Rank'}</div>
-            <div className="text-[10px] text-slate-500 mb-1">{companyInput ? `Company: ${companyInput}` : 'No Company Configured'}</div>
-            <div className="text-[10px] text-slate-400 italic mb-4">{vesselEmailInput ? `Vessel Email: ${vesselEmailInput}` : 'No Vessel Email Configured'}</div>
+          <div className="bg-white border-2 border-[#1b1b1b] p-8 rounded-xl shadow-[4px_4px_0px_0px_#1b1b1b]">
+            <span className="text-[9px] font-bold text-[#575ECF] uppercase tracking-wider block mb-1">Authenticated Officer</span>
+            <div className="text-base font-black text-[#1b1b1b] mb-0.5">{fullNameInput || 'Officer'}</div>
+            <div className="text-xs text-zinc-650 font-medium mb-0.5">{rankInput || 'Unspecified Rank'}</div>
+            <div className="text-[11px] text-zinc-500 mb-1">{companyInput ? `Company: ${companyInput}` : 'No Company Configured'}</div>
+            <div className="text-[11px] text-zinc-500 italic mb-6 break-all">{vesselEmailInput ? `Vessel Email: ${vesselEmailInput}` : 'No Vessel Email Configured'}</div>
 
-            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Dedicated Storage</h3>
-            <div className="flex items-baseline gap-2 mb-6">
-              <span className="text-3xl font-extrabold text-slate-900">
-                {totalSpaceUsedMB} <span className="text-sm font-normal text-slate-400">/ {subscriptionPlan === 'premium' ? "5,000" : STORAGE_LIMIT_MB} MB</span>
-              </span>
+            <h3 className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Dedicated Storage Space</h3>
+            <div className="flex items-baseline gap-1.5 mb-3">
+              <span className="text-3xl font-black text-[#1b1b1b]">{totalSpaceUsedMB}</span>
+              <span className="text-xs text-zinc-500">/ {subscriptionPlan === 'premium' ? "5,000" : STORAGE_LIMIT_MB} MB used</span>
             </div>
 
             <div className="space-y-2 mb-6">
-              <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div className="w-full h-2.5 bg-zinc-100 rounded-full overflow-hidden border border-[#dcdad5]">
                 <div 
-                  className="h-full bg-slate-800 rounded-full transition-all duration-500" 
+                  className="h-full bg-[#575ECF] rounded-full transition-all duration-500" 
                   style={{ width: `${(totalSpaceUsedMB / (subscriptionPlan === 'premium' ? 5000 : STORAGE_LIMIT_MB)) * 100}%` }}
                 />
               </div>
             </div>
 
             {subscriptionPlan !== 'premium' && (
-              <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg flex gap-3 text-amber-800 text-[11px] leading-relaxed mb-6">
-                <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+              <div className="bg-amber-50 border border-[#FE7B02]/30 p-4 rounded-lg flex gap-3 text-amber-800 text-xs leading-relaxed mb-6">
+                <AlertCircle className="w-4.5 h-4.5 shrink-0 text-[#FE7B02]" />
                 <span>You are utilizing your free 25MB space. Upgrade for 5GB limits.</span>
               </div>
             )}
@@ -572,7 +472,7 @@ export default function UserDashboard() {
             {subscriptionPlan !== 'premium' && (
               <button 
                 onClick={handleStripeCheckout}
-                className="w-full py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition shadow-sm"
+                className="w-full py-2.5 rounded-lg bg-[#575ECF] hover:bg-[#464cb3] text-white font-bold text-xs uppercase tracking-wider transition shadow-sm"
               >
                 Upgrade Space (Stripe)
               </button>
@@ -580,49 +480,51 @@ export default function UserDashboard() {
           </div>
 
           {/* Workspace Settings Card */}
-          <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
-            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-4">Workspace Settings</h3>
+          <div className="bg-white border border-[#dcdad5] p-6 rounded-xl shadow-sm">
+            <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+              <Settings className="w-3.5 h-3.5 text-[#575ECF]" /> Workspace Settings
+            </h3>
             <form onSubmit={handleSaveSettings} className="space-y-3.5">
               <div>
-                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Full Name</label>
+                <label className="block text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Full Name</label>
                 <input 
                   type="text" 
                   value={fullNameInput}
                   onChange={e => setFullNameInput(e.target.value)}
-                  className="w-full px-2.5 py-1.5 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
+                  className="w-full px-3 py-2 border border-[#dcdad5] focus:border-[#575ECF] bg-[#FCFBF8] rounded-lg text-xs outline-none text-[#1b1b1b] transition font-medium"
                 />
               </div>
               <div>
-                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Company Name</label>
+                <label className="block text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Company Name</label>
                 <input 
                   type="text" 
                   value={companyInput}
                   onChange={e => setCompanyInput(e.target.value)}
-                  className="w-full px-2.5 py-1.5 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
+                  className="w-full px-3 py-2 border border-[#dcdad5] focus:border-[#575ECF] bg-[#FCFBF8] rounded-lg text-xs outline-none text-[#1b1b1b] transition font-medium"
                 />
               </div>
               <div>
-                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Mariner Rank</label>
+                <label className="block text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Mariner Rank</label>
                 <input 
                   type="text" 
                   value={rankInput}
                   onChange={e => setRankInput(e.target.value)}
-                  className="w-full px-2.5 py-1.5 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
+                  className="w-full px-3 py-2 border border-[#dcdad5] focus:border-[#575ECF] bg-[#FCFBF8] rounded-lg text-xs outline-none text-[#1b1b1b] transition font-medium"
                 />
               </div>
               <div>
-                <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Vessel Email (For Webhooks)</label>
+                <label className="block text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Vessel Email (For Webhooks)</label>
                 <input 
                   type="email" 
                   value={vesselEmailInput}
                   onChange={e => setVesselEmailInput(e.target.value)}
                   placeholder="vessel@shipname.com"
-                  className="w-full px-2.5 py-1.5 border border-slate-200 focus:border-slate-400 bg-slate-50 rounded-lg text-xs outline-none text-slate-800 transition"
+                  className="w-full px-3 py-2 border border-[#dcdad5] focus:border-[#575ECF] bg-[#FCFBF8] rounded-lg text-xs outline-none text-[#1b1b1b] transition font-medium"
                 />
               </div>
               <button 
                 type="submit" 
-                className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-semibold text-[10px] uppercase tracking-wider transition"
+                className="w-full py-2.5 bg-[#575ECF] hover:bg-[#464cb3] text-white rounded-lg font-bold text-[10px] uppercase tracking-wider transition"
               >
                 Save Settings
               </button>
@@ -630,97 +532,107 @@ export default function UserDashboard() {
           </div>
 
           {/* Onboarding Guide Card */}
-          <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm">
-            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">Onboarding Instructions</h3>
-            <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
+          <div className="bg-white border border-[#dcdad5] p-6 rounded-xl shadow-sm">
+            <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-3">Onboarding Instructions</h3>
+            <div className="space-y-3 text-xs text-zinc-650 leading-relaxed font-medium">
               <p>To verify logs or endorsement credentials: </p>
-              <ol className="list-decimal list-inside space-y-1.5 pl-1">
+              <ol className="list-decimal list-inside space-y-2 pl-1 text-[11px] text-zinc-600">
                 <li>Attach your voyage logs as PDF.</li>
-                <li>Email them to: <strong className="text-slate-800 select-all">verify@mate-navy.com</strong> from your registered email or configured vessel email.</li>
-                <li>M.A.T.E will parse context and send the PDF response back.</li>
+                <li>Email them to: <strong className="text-[#1b1b1b] select-all">verify@mate-navy.com</strong>.</li>
+                <li>The response report PDF will land in your inbox.</li>
               </ol>
             </div>
           </div>
         </div>
 
+        {/* Right column (Storage Space, Copy Templates, Logs) */}
         <div className="lg:col-span-2 space-y-6">
           {statusMsg && (
-            <div className="bg-slate-100 border border-slate-200 p-4 rounded-lg text-slate-700 text-xs">
+            <div className={`p-4 rounded-lg text-xs border-2 ${
+              statusMsg.includes('failed') || statusMsg.includes('error')
+                ? 'bg-red-50 border-[#FE3F21] text-red-700'
+                : 'bg-indigo-50 border-[#575ECF] text-indigo-700'
+            }`}>
               {statusMsg}
             </div>
           )}
 
-          <div className="bg-white border border-slate-200 p-8 rounded-xl shadow-sm">
-            <h2 className="text-lg font-bold mb-1 text-slate-900">Isolated Storage Space</h2>
-            <p className="text-slate-500 text-xs mb-6">
+          <div className="bg-white border-2 border-[#1b1b1b] p-8 rounded-xl shadow-[4px_4px_0px_0px_#1b1b1b]">
+            <h2 className="text-lg font-black text-[#1b1b1b] mb-1">Isolated Storage Space</h2>
+            <p className="text-zinc-500 text-xs mb-6">
               Upload voyage logs and sea service records. Files are confined solely to your space.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              {uploadedFiles.map(file => (
-                <div key={file.id} className="p-4 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between">
-                  <div className="flex items-center gap-3 truncate">
-                    <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0">
-                      <FileText className="w-4 h-4 text-slate-500" />
+              {uploadedFiles.length === 0 ? (
+                <div className="md:col-span-2 text-center py-6 text-zinc-400 text-xs italic font-medium">No documents uploaded to this workspace.</div>
+              ) : (
+                uploadedFiles.map(file => (
+                  <div key={file.id} className="p-4 bg-[#FCFBF8] border border-[#dcdad5] rounded-lg flex items-center justify-between hover:border-[#1b1b1b] transition">
+                    <div className="flex items-center gap-3 truncate">
+                      <div className="w-8 h-8 rounded-lg bg-white border border-[#dcdad5] flex items-center justify-center shrink-0">
+                        <FileText className="w-4 h-4 text-[#575ECF]" />
+                      </div>
+                      <div className="truncate">
+                        <div className="text-xs font-bold text-[#1b1b1b] truncate">{file.name}</div>
+                        <div className="text-[9px] text-zinc-500">{file.file_size_mb} MB | {file.file_type.toUpperCase()}</div>
+                      </div>
                     </div>
-                    <div className="truncate">
-                      <div className="text-xs font-semibold text-slate-800 truncate">{file.name}</div>
-                      <div className="text-[10px] text-slate-400">{file.file_size_mb} MB | {file.file_type.toUpperCase()}</div>
-                    </div>
+                    <button 
+                      onClick={() => triggerDownload(file)}
+                      className="p-1 text-[#1b1b1b]/55 hover:text-[#1b1b1b] transition shrink-0" 
+                      title="Download document"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
                   </div>
-                  <button 
-                    onClick={() => triggerDownload(file)}
-                    className="p-1 text-slate-500 hover:text-slate-900 transition shrink-0" 
-                    title="Download document"
-                  >
-                    <Download className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
+                ))
+              )}
             </div>
 
-            <div className="border-2 border-dashed border-slate-200 hover:border-slate-400 rounded-lg p-8 flex flex-col items-center justify-center text-center transition cursor-pointer relative">
+            <div className="border-2 border-dashed border-[#dcdad5] hover:border-[#1b1b1b] rounded-lg p-8 flex flex-col items-center justify-center text-center transition cursor-pointer relative bg-[#FCFBF8]/40">
               <input 
                 type="file" 
                 accept=".pdf,.docx,.doc,.txt,.md"
                 onChange={handleFileUpload}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
-              <span className="text-xs font-semibold text-slate-600">
+              <Upload className="w-6 h-6 text-zinc-400 mb-2" />
+              <span className="text-xs font-bold text-zinc-500">
                 Upload Document (.pdf, .docx, .doc, .txt, .md)
               </span>
             </div>
           </div>
 
           {/* Available Maritime Tasks & Submission Templates */}
-          <div className="bg-white border border-slate-200 p-8 rounded-xl shadow-sm">
-            <h2 className="text-lg font-bold mb-1 text-slate-900">Task Submission Templates</h2>
-            <p className="text-slate-500 text-xs mb-6">
+          <div className="bg-white border-2 border-[#1b1b1b] p-8 rounded-xl shadow-[4px_4px_0px_0px_#1b1b1b]">
+            <h2 className="text-lg font-black text-[#1b1b1b] mb-1">Task Submission Templates</h2>
+            <p className="text-zinc-500 text-xs mb-6 font-medium">
               Select a task below, copy the pre-formatted email template, fill in your parameters, and send it to trigger an agent reply.
             </p>
 
             <div className="space-y-4">
               {agents.filter(a => agentTemplates.some(t => t.agent_id === a.id)).length === 0 ? (
-                <div className="text-xs text-slate-400 italic py-4 text-center">No task templates registered in this workspace yet.</div>
+                <div className="text-xs text-zinc-400 italic py-4 text-center font-medium">No task templates registered in this workspace yet.</div>
               ) : (
                 agents.map(agent => {
                   const templates = agentTemplates.filter(t => t.agent_id === agent.id);
                   if (templates.length === 0) return null;
                   return (
-                    <div key={agent.id} className="p-4 bg-slate-50 border border-slate-200 rounded-lg">
-                      <h4 className="text-xs font-bold text-slate-800 mb-1">{agent.name}</h4>
-                      <p className="text-[10px] text-slate-400 mb-3">{agent.description}</p>
+                    <div key={agent.id} className="p-4 bg-[#FCFBF8] border border-[#dcdad5] rounded-lg">
+                      <h4 className="text-xs font-bold text-[#1b1b1b] mb-1">{agent.name}</h4>
+                      <p className="text-[10px] text-zinc-500 mb-3 font-medium">{agent.description}</p>
                       
                       <div className="space-y-2.5">
                         {templates.map(t => (
-                          <div key={t.id} className="p-3 bg-white border border-slate-200 rounded-lg flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                          <div key={t.id} className="p-3.5 bg-white border border-[#dcdad5] rounded-lg flex flex-col sm:flex-row justify-between sm:items-center gap-3 hover:border-[#1b1b1b] transition">
                             <div>
-                              <div className="text-xs font-semibold text-slate-800">{t.task_name}</div>
-                              <div className="text-[10px] text-slate-500 leading-normal">{t.description}</div>
+                              <div className="text-xs font-bold text-[#1b1b1b]">{t.task_name}</div>
+                              <div className="text-[10px] text-zinc-500 leading-normal font-medium">{t.description}</div>
                             </div>
                             <button
                               onClick={() => handleCopyTemplate(t.template_body, t.task_name)}
-                              className="px-3.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-[10px] font-semibold text-slate-700 transition shrink-0 self-start sm:self-center"
+                              className="px-4 py-2 rounded-lg bg-[#575ECF] hover:bg-[#464cb3] text-white text-[10px] font-bold uppercase tracking-wider transition shrink-0 self-start sm:self-center"
                             >
                               Copy Email Draft
                             </button>
@@ -734,24 +646,28 @@ export default function UserDashboard() {
             </div>
           </div>
 
-          <div className="bg-white border border-slate-200 p-8 rounded-xl shadow-sm">
+          <div className="bg-white border-2 border-[#1b1b1b] p-8 rounded-xl shadow-[4px_4px_0px_0px_#1b1b1b]">
             <div className="flex items-center gap-2 mb-6">
-              <History className="w-4 h-4 text-slate-600" />
-              <h2 className="text-lg font-bold text-slate-900">Your Voyage Interaction Log</h2>
+              <History className="w-4.5 h-4.5 text-[#575ECF]" />
+              <h2 className="text-lg font-black text-[#1b1b1b]">Your Voyage Interaction Log</h2>
             </div>
 
             <div className="space-y-3">
               {interactionHistory.length === 0 ? (
-                <div className="text-slate-450 text-xs text-center py-6">No interactions logged yet.</div>
+                <div className="text-zinc-400 text-xs text-center py-6 italic font-medium">No interactions logged yet.</div>
               ) : (
                 interactionHistory.map(log => (
-                  <div key={log.id} className="flex justify-between items-center p-3.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px]">
-                    <div className="font-semibold text-slate-700">{log.subject}</div>
+                  <div key={log.id} onClick={() => setSelectedLog(log)} className="flex justify-between items-center p-3.5 bg-card border border-border rounded-lg text-[11px] hover:border-gold hover:shadow-sm transition cursor-pointer">
+                    <div className="font-bold text-zinc-700">{log.subject}</div>
                     <div className="flex items-center gap-4">
-                      <span className="text-slate-400">
+                      <span className="text-zinc-450 font-medium">
                         {new Date(log.created_at || Date.now()).toISOString().replace('T', ' ').substring(0, 16)}
                       </span>
-                      <span className="px-2 py-0.5 rounded-full bg-slate-200/60 text-slate-700 font-semibold border border-slate-300/30">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border text-center ${
+                        log.status === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
+                        log.status === 'Failed' ? 'bg-rose-50 text-rose-700 border-rose-300' :
+                        'bg-zinc-100 text-zinc-500 border-border'
+                      }`}>
                         {log.status}
                       </span>
                     </div>
@@ -763,6 +679,44 @@ export default function UserDashboard() {
         </div>
 
       </div>
+
+      {/* Selected Log Details Modal */}
+      {selectedLog && (
+        <div className="fixed inset-0 bg-[#1b1b1b]/40 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+          <div className="w-full max-w-2xl bg-card border border-border rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="bg-[#FAF9F6] border-b border-border px-6 py-4 flex justify-between items-center">
+              <div>
+                <h3 className="font-display text-sm font-semibold text-deep">{selectedLog.subject}</h3>
+                <span className="text-[9px] text-muted-foreground">
+                  {new Date(selectedLog.created_at || Date.now()).toISOString().replace('T', ' ').substring(0, 16)}
+                </span>
+              </div>
+              <button 
+                onClick={() => setSelectedLog(null)}
+                className="text-[10px] text-muted-foreground hover:text-foreground border border-border px-3 py-1.5 rounded-full hover:bg-secondary font-bold uppercase transition"
+              >
+                Close
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto space-y-4 font-sans text-xs">
+              <div>
+                <span className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">// Email Request:</span>
+                <div className="bg-background border border-border p-4 rounded-xl text-foreground font-medium leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
+                  {selectedLog.email_request || "No request text body logged."}
+                </div>
+              </div>
+              
+              <div>
+                <span className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">// AI Response Output:</span>
+                <div className="bg-[#FAF9F6] border border-border p-4 rounded-xl text-deep font-mono leading-relaxed whitespace-pre-wrap max-h-64 overflow-y-auto">
+                  {selectedLog.email_response || "No response text generated."}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

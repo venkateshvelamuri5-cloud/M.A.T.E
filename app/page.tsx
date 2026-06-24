@@ -1,160 +1,346 @@
-import React from 'react';
+"use client";
+import React, { useState } from 'react';
 import Link from 'next/link';
-import { Anchor, Clock, Shield, FileText, ArrowRight, Check } from 'lucide-react';
+import { 
+  Anchor, 
+  Mail, 
+  ArrowRight, 
+  ShieldAlert, 
+  ShieldCheck, 
+  ClipboardCheck, 
+  Waves, 
+  GraduationCap, 
+  Wrench, 
+  BookOpen, 
+  CloudSun, 
+  Calculator, 
+  FileText, 
+  Droplets,
+  ArrowUpRight,
+  Send,
+  Inbox
+} from 'lucide-react';
 
 export default function LandingPage() {
+  const [emailInput, setEmailInput] = useState("Hot work in pump room — bilge area, vessel underway.");
+  const [activeTab, setActiveTab] = useState<'risk' | 'audit' | 'drill' | 'training'>('risk');
+
   return (
-    <div className="min-h-screen bg-[#fafafb] text-slate-800 flex flex-col font-sans selection:bg-slate-800 selection:text-white">
+    <div className="min-h-screen bg-background text-foreground font-sans selection:bg-gold selection:text-deep relative">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200/80 py-4 px-6 md:px-12 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <Anchor className="w-6 h-6 text-slate-700" />
-          <span className="text-lg font-bold tracking-tight text-slate-900">
-            M.A.T.E
-          </span>
-        </div>
-        <nav className="hidden md:flex gap-8 text-sm font-medium text-slate-500">
-          <a href="#about" className="hover:text-slate-900 transition">About</a>
-          <a href="#features" className="hover:text-slate-900 transition">Features</a>
-          <a href="#pricing" className="hover:text-slate-900 transition">Plans</a>
-        </nav>
-        <div>
-          <Link href="/dashboard" className="px-5 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-850 text-white text-xs font-semibold transition shadow-sm">
-            Enter Workspace
+      <header className="sticky top-0 z-40 backdrop-blur-md bg-background/70 border-b border-border/60">
+        <div className="mx-auto max-w-6xl px-6 h-16 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2.5 hover:opacity-90 transition">
+            <img src="/logo.jpeg" alt="M.A.T.E logo" width="36" height="36" className="rounded" />
+            <span className="font-display text-base font-semibold leading-tight text-deep">
+              M.A.T.E
+              <span className="block text-[9px] text-muted-foreground font-medium uppercase tracking-tighter">
+                Maritime Automated Technical Executive
+              </span>
+            </span>
           </Link>
+          <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-muted-foreground">
+            <a href="#modules" className="hover:text-foreground transition">Modules</a>
+            <a href="#how" className="hover:text-foreground transition">How it works</a>
+            <a href="#email" className="hover:text-foreground transition">Email access</a>
+            <a href="#roadmap" className="hover:text-foreground transition">Roadmap</a>
+          </nav>
+          <div className="flex items-center gap-4">
+            <Link href="/analyst" className="text-xs text-muted-foreground hover:text-foreground transition font-bold uppercase tracking-wider">
+              Analyst
+            </Link>
+            <Link href="/signup" className="inline-flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition shadow-sm">
+              Get Access <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
       </header>
 
       {/* Hero Section */}
-      <section className="max-w-4xl mx-auto text-center px-6 py-20 md:py-32 flex-1 flex flex-col justify-center items-center">
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-slate-600 text-[11px] font-medium mb-6">
-          Dedicated Maritime Document Router
-        </span>
-        <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-slate-900 mb-6 leading-tight">
-          Automated Sea Service & Voyage Log Verification
-        </h1>
-        <p className="text-base md:text-lg text-slate-500 max-w-2xl mb-10 leading-relaxed">
-          M.A.T.E processes incoming sea service files, computes voyage metrics, validates crew endorsement certificates, 
-          and generates structured PDF verification reports formatted on your official letters of sea service.
-        </p>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <Link href="/dashboard" className="px-6 py-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold flex items-center gap-2 transition">
-            Access User Space (25MB Free Storage)
-            <ArrowRight className="w-4 h-4" />
-          </Link>
+      <section id="top" className="relative overflow-hidden">
+        <div className="mx-auto max-w-6xl px-6 pt-20 pb-24 text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3.5 py-1.5 text-xs font-medium text-muted-foreground shadow-sm">
+            <span className="text-gold font-bold">⚓</span>
+            Built by senior Masters &amp; Chief Engineers
+          </div>
+          <h1 className="mt-6 font-display text-5xl md:text-7xl font-semibold leading-[1.05] text-deep max-w-4xl mx-auto tracking-tight">
+            Paperwork for mariners, <br className="hidden md:block"/>
+            <span className="text-gold italic font-display">done in minutes.</span>
+          </h1>
+          <p className="mt-6 text-base md:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
+            Risk assessments, audit closures, drill notes, training minutes etc—expertly generated by AI, backed by training from serving senior officers, and delivered straight to your inbox. Every piece of generated intelligence is fully customised based on your vessel's unique profile provided during registration.
+          </p>
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
+            <Link href="/signup" className="inline-flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-6 py-3 text-sm font-medium hover:bg-primary/90 transition shadow-lg shadow-primary/20 hover:scale-[1.02] transform duration-150">
+              Start by sending an email <Mail className="h-4 w-4" />
+            </Link>
+            <a href="#modules" className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-6 py-3 text-sm font-medium hover:bg-secondary transition shadow-sm hover:scale-[1.02] transform duration-150">
+              Explore modules
+            </a>
+          </div>
+
+          <div className="mt-16 grid grid-cols-1 md:grid-cols-3 max-w-3xl mx-auto gap-6 text-left border-t border-border/60 pt-12">
+            <div className="border-l-2 border-gold/60 pl-4">
+              <div className="font-display text-2xl text-deep font-bold">&lt; 1 min</div>
+              <div className="text-xs uppercase tracking-wider text-muted-foreground mt-1">Average response time</div>
+            </div>
+            <div className="border-l-2 border-gold/60 pl-4">
+              <div className="font-display text-2xl text-deep font-bold">100%</div>
+              <div className="text-xs uppercase tracking-wider text-muted-foreground mt-1">Built for maritime application by serving senior officers</div>
+            </div>
+            <div className="border-l-2 border-gold/60 pl-4">
+              <div className="font-display text-2xl text-deep font-bold">Communicate with AI via Email</div>
+              <div className="text-xs uppercase tracking-wider text-muted-foreground mt-1">No app installation, no firewall issues and no whitelisting of website required</div>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* Product Details Section */}
-      <section id="about" className="py-20 bg-white border-t border-slate-200">
-        <div className="max-w-5xl mx-auto px-6 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-          <div>
-            <h2 className="text-2xl md:text-3xl font-bold text-slate-900 mb-4">
-              Designed Specifically for Merchant Navy Workflows
+      {/* Live Modules Section */}
+      <section id="modules" className="border-t border-border/60 bg-card/40">
+        <div className="mx-auto max-w-6xl px-6 py-24">
+          <div className="max-w-2xl">
+            <div className="text-xs uppercase tracking-[0.2em] text-gold font-bold">Live Modules</div>
+            <h2 className="mt-3 font-display text-4xl md:text-5xl font-semibold text-deep">
+              Paperwork that used to take hours, now takes minutes
             </h2>
-            <p className="text-slate-600 text-sm leading-relaxed mb-6">
-              Maritime officers, captains, and crewing agents spend hundreds of hours manually reviewing discharge books, sea logs, 
-              and COC endorsements. M.A.T.E intercepts incoming emails, extracts log coordinates, strips sensitive PII, and returns 
-              fully mapped certificates to your inbox in seconds.
+            <p className="mt-4 text-muted-foreground">
+              Every module seamlessly converts a single line of input into a comprehensive, vessel-specific output in full compliance with the highest maritime standards.
             </p>
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-slate-700 text-xs font-medium">
-                <Check className="w-4 h-4 text-slate-600" />
-                Validates vessel gross tonnage and engine power parameters.
-              </div>
-              <div className="flex items-center gap-2 text-slate-700 text-xs font-medium">
-                <Check className="w-4 h-4 text-slate-600" />
-                Cross-references watchkeeping certificate schedules.
-              </div>
-            </div>
+            <p className="mt-4 text-muted-foreground">
+              The platform's underlying intelligence is continuously fine-tuned by experienced, active-duty Masters and Chief Engineers.
+            </p>
+            <p className="mt-4 text-muted-foreground font-semibold text-deep/80">
+              This rigorous oversight ensures the highest caliber of documentation, engineered to withstand the toughest audit scrutiny.
+            </p>
           </div>
-          <div className="bg-slate-50 border border-slate-200 p-8 rounded-xl space-y-6">
-            <h3 className="font-bold text-slate-900 text-lg">How It Saves You Time</h3>
-            <div className="space-y-4">
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-lg bg-slate-200 flex items-center justify-center font-bold text-slate-700 text-sm">1</div>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  <strong>Submit Sea Service Log:</strong> Forward your sea log documents to your designated M.A.T.E email inbox.
-                </p>
+
+          <div className="mt-12 grid md:grid-cols-2 gap-5">
+            {/* Risk Assessment Card */}
+            <div className="group rounded-2xl border border-border bg-background p-7 hover:border-gold/60 hover:shadow-sm transition duration-300">
+              <div className="flex items-center justify-center h-12 w-12 rounded-xl bg-primary text-primary-foreground group-hover:bg-gold group-hover:text-deep transition duration-300">
+                <ShieldCheck className="h-6 w-6" />
               </div>
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-lg bg-slate-200 flex items-center justify-center font-bold text-slate-700 text-sm">2</div>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  <strong>Automated Checks:</strong> The system automatically extracts data, scrubs confidential details, and validates voyage criteria.
-                </p>
+              <h3 className="mt-5 font-display text-2xl font-semibold text-deep">Risk Assessment</h3>
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+                Submit a single-line item. Receive a detailed, audit-ready risk assessment with hazards, controls and residual ratings.
+              </p>
+            </div>
+
+            {/* Audit Closure Card */}
+            <div className="group rounded-2xl border border-border bg-background p-7 hover:border-gold/60 hover:shadow-sm transition duration-300">
+              <div className="flex items-center justify-center h-12 w-12 rounded-xl bg-primary text-primary-foreground group-hover:bg-gold group-hover:text-deep transition duration-300">
+                <ClipboardCheck className="h-6 w-6" />
               </div>
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-lg bg-slate-200 flex items-center justify-center font-bold text-slate-700 text-sm">3</div>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  <strong>Instant Reply:</strong> You receive an official certificate validation sheet sent directly back to your email inbox.
-                </p>
+              <h3 className="mt-5 font-display text-2xl font-semibold text-deep">Audit Closure</h3>
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+                One line in — a thorough audit closure report out. Root causes, corrective actions, evidence prompts, all formatted.
+              </p>
+            </div>
+
+            {/* Drill Notes Card */}
+            <div className="group rounded-2xl border border-border bg-background p-7 hover:border-gold/60 hover:shadow-sm transition duration-300">
+              <div className="flex items-center justify-center h-12 w-12 rounded-xl bg-primary text-primary-foreground group-hover:bg-gold group-hover:text-deep transition duration-300">
+                <Waves className="h-6 w-6" />
               </div>
+              <h3 className="mt-5 font-display text-2xl font-semibold text-deep">Drill Notes</h3>
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+                Minimal input, complete drill minutes. Scenario, objectives, timing, observations, lessons learned — ready to file.
+              </p>
+            </div>
+
+            {/* Training Minutes Card */}
+            <div className="group rounded-2xl border border-border bg-background p-7 hover:border-gold/60 hover:shadow-sm transition duration-300">
+              <div className="flex items-center justify-center h-12 w-12 rounded-xl bg-primary text-primary-foreground group-hover:bg-gold group-hover:text-deep transition duration-300">
+                <GraduationCap className="h-6 w-6" />
+              </div>
+              <h3 className="mt-5 font-display text-2xl font-semibold text-deep">Training Minutes</h3>
+              <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+                Generate the training minutes an officer needs to brief crew on any subject — structured, vessel-appropriate, signable.
+              </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Pricing / Tiers Section */}
-      <section id="pricing" className="py-20 bg-slate-50 border-t border-slate-200">
-        <div className="max-w-4xl mx-auto px-6 text-center">
-          <h2 className="text-2xl md:text-3xl font-bold text-slate-900 mb-3">Simple Pilot Plans</h2>
-          <p className="text-slate-500 text-xs mb-12">Upgrade volumes anytime securely via Stripe payments.</p>
+      {/* How it Works / Email Gateway Section */}
+      <section id="email" className="border-t border-border/60 bg-background">
+        <div className="mx-auto max-w-6xl px-6 py-24 grid lg:grid-cols-2 gap-12 items-center">
+          <div>
+            <div className="text-xs uppercase tracking-[0.2em] text-gold font-bold">Built for ships, not for offices</div>
+            <h2 className="mt-3 font-display text-4xl md:text-5xl font-semibold text-deep">
+              No app. No login. Just email.
+            </h2>
+            <p className="mt-5 text-muted-foreground leading-relaxed">
+              We understand seafarers' realities — patchy VSAT bandwidth, firewalled business computers, no Play Store access. Our proprietary email gateway lets you interact with the AI using the one channel that always works onboard.
+            </p>
+            <ol className="mt-8 space-y-5">
+              <li className="flex gap-4">
+                <div className="shrink-0 h-9 w-9 rounded-full bg-deep text-primary-foreground flex items-center justify-center font-display font-semibold">
+                  1
+                </div>
+                <div>
+                  <div className="font-semibold text-deep">Compose an email</div>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Address it to your dedicated M.A.T.E mailbox with one line describing what you need.
+                  </div>
+                </div>
+              </li>
+              <li className="flex gap-4">
+                <div className="shrink-0 h-9 w-9 rounded-full bg-deep text-primary-foreground flex items-center justify-center font-display font-semibold">
+                  2
+                </div>
+                <div>
+                  <div className="font-semibold text-deep">AI drafts user/vessel specific response</div>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    AI generates the requested information looking into user/vessel specific information provided at the time of registration
+                  </div>
+                </div>
+              </li>
+              <li className="flex gap-4">
+                <div className="shrink-0 h-9 w-9 rounded-full bg-deep text-primary-foreground flex items-center justify-center font-display font-semibold">
+                  3
+                </div>
+                <div>
+                  <div className="font-semibold text-deep">Reply lands in your inbox</div>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    An unformatted, plain-text email arrives directly in your inbox, allowing you to easily copy the content into your company-specific apps or forms.
+                  </div>
+                </div>
+              </li>
+            </ol>
+          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-2xl mx-auto text-left">
-            {/* Free */}
-            <div className="bg-white border border-slate-200 p-8 rounded-xl flex flex-col justify-between">
-              <div>
-                <h3 className="font-bold text-slate-900 text-lg mb-1">Officer Pilot</h3>
-                <p className="text-xs text-slate-400 mb-6">Free community version.</p>
-                <div className="text-3xl font-extrabold text-slate-900 mb-6">$0<span className="text-sm text-slate-400 font-normal">/mo</span></div>
-                <ul className="space-y-3.5 mb-8 text-xs text-slate-600">
-                  <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-slate-500" />
-                    10 processed logs / month
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-slate-500" />
-                    25MB dedicated file space
-                  </li>
-                </ul>
+          {/* Interactive CSS Email gateway mockup */}
+          <div className="relative rounded-3xl border border-border bg-gradient-to-br from-secondary to-card p-6 md:p-8 overflow-hidden shadow-md">
+            <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden flex flex-col font-mono text-xs text-muted-foreground">
+              <div className="bg-[#FAF9F6] border-b border-border px-4 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-full bg-[#FE3F21] inline-block" />
+                  <span className="w-3 h-3 rounded-full bg-[#FE7B02] inline-block" />
+                  <span className="w-3 h-3 rounded-full bg-[#F858BC] inline-block" />
+                </div>
+                <span className="text-[10px] text-zinc-400">maritime-gateway@mate.ai</span>
               </div>
-              <Link href="/dashboard" className="block text-center w-full py-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-800 transition">
-                Access Free Space
-              </Link>
+              <div className="p-4 space-y-3.5">
+                <div>
+                  <span className="text-gold font-bold">To:</span> <span className="text-deep font-bold">hello@logmark-ai.com</span>
+                </div>
+                <div className="border-b border-border/60 pb-2">
+                  <span className="text-gold font-bold">Subject:</span> <span className="text-deep font-bold">Risk Assessment</span>
+                </div>
+                <div>
+                  <div className="text-deep font-semibold bg-background p-3 rounded-lg border border-border/80">
+                    Hot work in pump room — bilge area, vessel underway.
+                  </div>
+                </div>
+              </div>
+              <div className="bg-primary/5 border-t border-border px-4 py-3.5 flex items-center justify-between text-[11px] text-deep/75">
+                <div className="flex items-center gap-2">
+                  <Inbox className="w-4 h-4 text-gold" />
+                  <span>Interactive Mail Gateway</span>
+                </div>
+                <Link href="/signup" className="text-[10px] font-bold text-primary hover:text-gold uppercase tracking-wider flex items-center gap-1">
+                  Try Simulator <ArrowUpRight className="w-3 h-3" />
+                </Link>
+              </div>
             </div>
 
-            {/* Pro */}
-            <div className="bg-white border-2 border-slate-900 p-8 rounded-xl flex flex-col justify-between shadow-sm">
-              <div>
-                <h3 className="font-bold text-slate-900 text-lg mb-1">Chief Command</h3>
-                <p className="text-xs text-indigo-500 mb-6">Most selected tier.</p>
-                <div className="text-3xl font-extrabold text-slate-900 mb-6">$29<span className="text-sm text-slate-400 font-normal">/mo</span></div>
-                <ul className="space-y-3.5 mb-8 text-xs text-slate-600">
-                  <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-slate-800" />
-                    5,000 processed logs / month
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-slate-800" />
-                    5GB dedicated file space
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-slate-800" />
-                    Custom letters of sea service formats
-                  </li>
-                </ul>
+            {/* Simulated Response */}
+            <div className="mt-4 bg-white rounded-xl border border-border p-4 shadow-sm font-mono text-[10px] text-zinc-700 leading-relaxed max-h-40 overflow-y-auto">
+              <div className="text-green-600 font-bold mb-1 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block animate-ping" />
+                From: hello@logmark-ai.com
               </div>
-              <button className="w-full py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition">
-                Subscribe with Stripe
-              </button>
+              <pre className="whitespace-pre-line text-zinc-600 mt-2 font-mono">
+                {`Vessel: M/V PIONEER\nRank: Chief Mate\n\n[RISK ASSESSMENT SHEET]\nActivity: Hot work in pump room — bilge area, vessel underway.\n\nHazards: Explosive atmospheres, slips/falls, limited evacuation path.\nControls: Gas-free checks, fire watch, bilge drainage, emergency rescue line ready.\nResidual Rating: Low (Acceptable with Master approval).`}
+              </pre>
             </div>
           </div>
         </div>
+      </section>
+
+      {/* Roadmap Section */}
+      <section id="roadmap" className="border-t border-border/60 bg-deep text-primary-foreground">
+        <div className="mx-auto max-w-6xl px-6 py-24">
+          <div className="flex items-end justify-between flex-wrap gap-6 border-b border-primary-foreground/15 pb-8">
+            <div className="max-w-xl">
+              <div className="text-xs uppercase tracking-[0.2em] text-gold font-bold">Under construction</div>
+              <h2 className="mt-3 font-display text-4xl md:text-5xl font-semibold text-white">
+                More modules, shipping soon.
+              </h2>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-primary-foreground/75 bg-primary-foreground/5 border border-primary-foreground/10 px-3.5 py-1.5 rounded-full">
+              <Wrench className="h-4 w-4 text-gold animate-spin" style={{ animationDuration: '3s' }} />
+              In active development
+            </div>
+          </div>
+
+          <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Module 1 */}
+            <div className="flex items-center gap-3 rounded-xl border border-primary-foreground/10 bg-primary-foreground/[0.03] px-5 py-4 hover:bg-primary-foreground/[0.06] transition duration-200">
+              <BookOpen className="h-5 w-5 text-gold shrink-0" />
+              <span className="text-sm font-medium">SMS Clarification (AI)</span>
+            </div>
+            {/* Module 2 */}
+            <div className="flex items-center gap-3 rounded-xl border border-primary-foreground/10 bg-primary-foreground/[0.03] px-5 py-4 hover:bg-primary-foreground/[0.06] transition duration-200">
+              <GraduationCap className="h-5 w-5 text-gold shrink-0" />
+              <span className="text-sm font-medium">SIRE 2.0 Learning &amp; Training</span>
+            </div>
+            {/* Module 3 */}
+            <div className="flex items-center gap-3 rounded-xl border border-primary-foreground/10 bg-primary-foreground/[0.03] px-5 py-4 hover:bg-primary-foreground/[0.06] transition duration-200">
+              <CloudSun className="h-5 w-5 text-gold shrink-0" />
+              <span className="text-sm font-medium">Weather Reports</span>
+            </div>
+            {/* Module 4 */}
+            <div className="flex items-center gap-3 rounded-xl border border-primary-foreground/10 bg-primary-foreground/[0.03] px-5 py-4 hover:bg-primary-foreground/[0.06] transition duration-200">
+              <Calculator className="h-5 w-5 text-gold shrink-0" />
+              <span className="text-sm font-medium">Payroll Calculations</span>
+            </div>
+            {/* Module 5 */}
+            <div className="flex items-center gap-3 rounded-xl border border-primary-foreground/10 bg-primary-foreground/[0.03] px-5 py-4 hover:bg-primary-foreground/[0.06] transition duration-200">
+              <FileText className="h-5 w-5 text-gold shrink-0" />
+              <span className="text-sm font-medium">Voyage Orders, Simplified</span>
+            </div>
+            {/* Module 6 */}
+            <div className="flex items-center gap-3 rounded-xl border border-primary-foreground/10 bg-primary-foreground/[0.03] px-5 py-4 hover:bg-primary-foreground/[0.06] transition duration-200">
+              <Droplets className="h-5 w-5 text-gold shrink-0" />
+              <span className="text-sm font-medium">Cargo Calculations — Oil / Product / Chemical</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Call to Action Section */}
+      <section className="border-t border-border/60 bg-background relative overflow-hidden">
+        <div className="mx-auto max-w-4xl px-6 py-24 text-center relative z-10">
+          <h2 className="font-display text-4xl md:text-5xl font-semibold text-deep">Get your watch back.</h2>
+          <p className="mt-4 text-muted-foreground max-w-xl mx-auto leading-relaxed">
+            Join Masters, Chief Engineers and deck officers already cutting hours of paperwork into minutes — all from their ship inbox.
+          </p>
+          <div className="mt-8 flex justify-center">
+            <Link href="/signup" className="inline-flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-8 py-4 text-sm font-medium hover:bg-primary/90 transition shadow-lg shadow-primary/20 hover:scale-[1.02] transform duration-150">
+              Request early access <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+        {/* Subtle background decoration */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-gold/5 rounded-full blur-3xl pointer-events-none" />
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white py-8 text-center text-xs text-slate-400">
-        &copy; {new Date().getFullYear()} M.A.T.E. Merchant Navy Validation.
+      <footer className="border-t border-border/60 bg-[#FCFBF8]">
+        <div className="mx-auto max-w-6xl px-6 py-8 flex items-center justify-between flex-wrap gap-4 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <img src="/logo.jpeg" alt="M.A.T.E logo" width="24" height="24" className="rounded" />
+            <span>© 2026 M.A.T.E. Crewed by sailors, powered by AI.</span>
+          </div>
+          <div className="flex gap-6">
+            <a href="#modules" className="hover:text-foreground transition">Modules</a>
+            <a href="#email" className="hover:text-foreground transition">Email Access</a>
+            <a href="mailto:hello@mate.ai" className="hover:text-foreground transition">Contact</a>
+          </div>
+        </div>
       </footer>
     </div>
   );
