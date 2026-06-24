@@ -61,6 +61,62 @@ export default function UserDashboard() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedLog, setSelectedLog] = useState<InteractionLog | null>(null);
 
+  // Live Agent Web Runner States
+  const [webRunAgentId, setWebRunAgentId] = useState('');
+  const [webRunQueryInput, setWebRunQueryInput] = useState('');
+  const [webRunSelectedFiles, setWebRunSelectedFiles] = useState<string[]>([]);
+  const [isWebRunning, setIsWebRunning] = useState(false);
+  const [webRunResult, setWebRunResult] = useState<string | null>(null);
+
+  const handleToggleFileSelection = (fileId: string) => {
+    setWebRunSelectedFiles(prev => 
+      prev.includes(fileId) 
+        ? prev.filter(id => id !== fileId)
+        : [...prev, fileId]
+    );
+  };
+
+  const handleWebRunSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userId || !webRunAgentId || !webRunQueryInput) {
+      setStatusMsg("Please select an agent and fill in the task query.");
+      return;
+    }
+
+    setIsWebRunning(true);
+    setStatusMsg("Running AI agent, validating workspace files...");
+    setWebRunResult(null);
+
+    try {
+      const response = await fetch('/api/agent/run', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId,
+          agentId: webRunAgentId,
+          queryInput: webRunQueryInput,
+          selectedFileIds: webRunSelectedFiles
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Server error running agent');
+      }
+
+      setWebRunResult(data.result);
+      setStatusMsg("Agent finished successfully! You can view the output below.");
+      fetchUserData(userId, emailInput);
+    } catch (err) {
+      console.error(err);
+      setStatusMsg(`Execution failed: ${(err as Error).message}`);
+    } finally {
+      setIsWebRunning(false);
+    }
+  };
+
   const STORAGE_LIMIT_MB = 25;
 
   // Track storage calculation
@@ -447,6 +503,21 @@ export default function UserDashboard() {
             <div className="text-[11px] text-zinc-500 mb-1">{companyInput ? `Company: ${companyInput}` : 'No Company Configured'}</div>
             <div className="text-[11px] text-zinc-500 italic mb-6 break-all">{vesselEmailInput ? `Vessel Email: ${vesselEmailInput}` : 'No Vessel Email Configured'}</div>
 
+            <h3 className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Monthly Agent Interactions</h3>
+            <div className="flex items-baseline gap-1.5 mb-3">
+              <span className="text-3xl font-black text-[#1b1b1b]">{interactionsCount}</span>
+              <span className="text-xs text-zinc-500">/ {maxInteractions} interactions used</span>
+            </div>
+
+            <div className="space-y-2 mb-6">
+              <div className="w-full h-2.5 bg-zinc-100 rounded-full overflow-hidden border border-[#dcdad5]">
+                <div 
+                  className="h-full bg-[#575ECF] rounded-full transition-all duration-500" 
+                  style={{ width: `${Math.min((interactionsCount / (maxInteractions || 1)) * 100, 100)}%` }}
+                />
+              </div>
+            </div>
+
             <h3 className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider mb-2">Dedicated Storage Space</h3>
             <div className="flex items-baseline gap-1.5 mb-3">
               <span className="text-3xl font-black text-[#1b1b1b]">{totalSpaceUsedMB}</span>
@@ -538,7 +609,7 @@ export default function UserDashboard() {
               <p>To verify logs or endorsement credentials: </p>
               <ol className="list-decimal list-inside space-y-2 pl-1 text-[11px] text-zinc-600">
                 <li>Attach your voyage logs as PDF.</li>
-                <li>Email them to: <strong className="text-[#1b1b1b] select-all">verify@mate-navy.com</strong>.</li>
+                <li>Email them to: <strong className="text-[#1b1b1b] select-all">hello@logmark-ai.com</strong>.</li>
                 <li>The response report PDF will land in your inbox.</li>
               </ol>
             </div>
@@ -604,8 +675,81 @@ export default function UserDashboard() {
             </div>
           </div>
 
+          {/* Interactive Web Agent Portal */}
+          <div className="bg-card border border-border p-8 rounded-xl shadow-sm">
+            <h2 className="text-lg font-black text-deep mb-1 font-display">Interactive Web Agent Portal</h2>
+            <p className="text-muted-foreground text-xs mb-6 font-medium">
+              Run specialized AI agents directly in your web browser. Select an agent, attach reference files, type your request, and execute.
+            </p>
+
+            <form onSubmit={handleWebRunSubmit} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Select Agent</label>
+                <select
+                  value={webRunAgentId}
+                  onChange={e => setWebRunAgentId(e.target.value)}
+                  required
+                  className="w-full px-3.5 py-2.5 border border-border bg-background rounded-xl text-xs outline-none text-foreground transition font-medium"
+                >
+                  <option value="">-- Choose an Agent --</option>
+                  {agents.map(a => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {uploadedFiles.length > 0 && (
+                <div>
+                  <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Attach Reference Documents (From Workspace)</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-3.5 bg-background border border-border rounded-xl max-h-40 overflow-y-auto">
+                    {uploadedFiles.map(file => (
+                      <label key={file.id} className="flex items-center gap-2 text-xs text-foreground cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={webRunSelectedFiles.includes(file.id)}
+                          onChange={() => handleToggleFileSelection(file.id)}
+                          className="rounded border-border text-gold focus:ring-gold"
+                        />
+                        <span className="truncate">{file.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Input Task Description / Query</label>
+                <textarea
+                  required
+                  rows={3}
+                  value={webRunQueryInput}
+                  onChange={e => setWebRunQueryInput(e.target.value)}
+                  placeholder="e.g., Generate a risk assessment for hot work aloft on the main mast."
+                  className="w-full px-3.5 py-2.5 border border-border bg-background rounded-xl text-xs outline-none text-foreground transition font-medium"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isWebRunning}
+                className="px-6 py-3 rounded-full bg-primary hover:bg-primary/95 text-primary-foreground text-xs font-bold uppercase tracking-wider transition shadow-md shadow-primary/20 w-full sm:w-auto hover:scale-[1.02] transform duration-150"
+              >
+                {isWebRunning ? "Processing Task..." : "Execute Web Agent"}
+              </button>
+            </form>
+
+            {webRunResult && (
+              <div className="mt-6 border-t border-border pt-6">
+                <span className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-3">// Generated Output:</span>
+                <pre className="p-4 bg-background border border-border rounded-xl text-xs text-foreground font-mono leading-relaxed whitespace-pre-wrap select-all max-h-96 overflow-y-auto">
+                  {webRunResult}
+                </pre>
+              </div>
+            )}
+          </div>
+
           {/* Available Maritime Tasks & Submission Templates */}
-          <div className="bg-white border-2 border-[#1b1b1b] p-8 rounded-xl shadow-[4px_4px_0px_0px_#1b1b1b]">
+          <div className="bg-card border border-border p-8 rounded-xl shadow-sm">
             <h2 className="text-lg font-black text-[#1b1b1b] mb-1">Task Submission Templates</h2>
             <p className="text-zinc-500 text-xs mb-6 font-medium">
               Select a task below, copy the pre-formatted email template, fill in your parameters, and send it to trigger an agent reply.
