@@ -76,6 +76,27 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
+    // Generate a fallback hash-based ID if none is supplied
+    if (!webhookId && from && bodyText) {
+      const crypto = require('crypto');
+      webhookId = crypto.createHash('md5').update(`${from}_${subject || ''}_${bodyText.substring(0, 500)}`).digest('hex');
+      
+      try {
+        const { data: existingLog } = await supabase
+          .from('interactions_log')
+          .select('id')
+          .eq('webhook_id', webhookId)
+          .maybeSingle();
+
+        if (existingLog) {
+          console.log(`Duplicate webhook detected (Hash ID: ${webhookId}). Skipping execution.`);
+          return NextResponse.json({ success: true, message: 'Duplicate webhook skipped' });
+        }
+      } catch (checkErr) {
+        console.warn('Hash idempotency check query failed:', (checkErr as Error).message);
+      }
+    }
+
     // 3. Connect to Supabase to verify user profiles and limits
     try {
       let { data: profile, error: profileErr } = await supabase
@@ -99,6 +120,37 @@ export async function POST(req: NextRequest) {
       }
 
       userId = profile.id;
+
+      // Acquire lock immediately by inserting a placeholder Processing row
+      if (webhookId) {
+        try {
+          const { error: lockErr } = await supabase
+            .from('interactions_log')
+            .insert({
+              user_id: userId,
+              subject: subject || 'Response Inquiry',
+              status: 'Processing',
+              webhook_id: webhookId,
+              email_request: bodyText
+            });
+
+          if (lockErr) {
+            // Check if it already exists to return success immediately
+            const { data: existingCheck } = await supabase
+              .from('interactions_log')
+              .select('id')
+              .eq('webhook_id', webhookId)
+              .maybeSingle();
+
+            if (existingCheck) {
+              console.log(`Lock acquisition failed. Duplicate webhook retry running or done: ${webhookId}`);
+              return NextResponse.json({ success: true, message: 'Duplicate webhook skipped by lock' });
+            }
+          }
+        } catch (lockFail) {
+          console.warn('Failed to insert lock record:', (lockFail as Error).message);
+        }
+      }
 
       const { data: limits, error: limitQueryErr } = await supabase
         .from('usage_limits')
@@ -328,17 +380,27 @@ export async function POST(req: NextRequest) {
           .update({ interactions_count: limitCount + 1 })
           .eq('user_id', userId);
 
-        await supabase
-          .from('interactions_log')
-          .insert({
-            user_id: userId,
-            subject: subject || 'Response Inquiry',
-            status: 'Completed',
-            agent_id: selectedAgentId,
-            webhook_id: webhookId,
-            email_request: bodyText,
-            email_response: processedResult
-          });
+        if (webhookId) {
+          await supabase
+            .from('interactions_log')
+            .update({
+              status: 'Completed',
+              agent_id: selectedAgentId,
+              email_response: processedResult
+            })
+            .eq('webhook_id', webhookId);
+        } else {
+          await supabase
+            .from('interactions_log')
+            .insert({
+              user_id: userId,
+              subject: subject || 'Response Inquiry',
+              status: 'Completed',
+              agent_id: selectedAgentId,
+              email_request: bodyText,
+              email_response: processedResult
+            });
+        }
 
         console.log(`Updated interaction limit counts to ${limitCount + 1}`);
       } catch (updErr) {
@@ -359,18 +421,28 @@ export async function POST(req: NextRequest) {
     // Log failure in database if user ID was identified
     if (userId) {
       try {
-        await supabase
-          .from('interactions_log')
-          .insert({
-            user_id: userId,
-            subject: subject || 'Failed Inquiry',
-            status: 'Failed',
-            agent_id: selectedAgentId,
-            error_message: (error as Error).message,
-            webhook_id: webhookId,
-            email_request: bodyText,
-            email_response: null
-          });
+        if (webhookId) {
+          await supabase
+            .from('interactions_log')
+            .update({
+              status: 'Failed',
+              agent_id: selectedAgentId,
+              error_message: (error as Error).message
+            })
+            .eq('webhook_id', webhookId);
+        } else {
+          await supabase
+            .from('interactions_log')
+            .insert({
+              user_id: userId,
+              subject: subject || 'Failed Inquiry',
+              status: 'Failed',
+              agent_id: selectedAgentId,
+              error_message: (error as Error).message,
+              email_request: bodyText,
+              email_response: null
+            });
+        }
       } catch (logErr) {
         console.warn('Could not log webhook failure in DB:', (logErr as Error).message);
       }
