@@ -1004,49 +1004,35 @@ export default function UserDashboard() {
 
   // Render Category Block
   const renderCategoryCard = (categoryName: string) => {
-    const slots = dynamicSlots.filter(s => s.category === categoryName);
+    const slots = dynamicSlots.filter(s => s.category === categoryName && s.name && s.deployed);
+    if (slots.length === 0) return null;
     return (
       <div key={categoryName} className="bg-white border-2 border-[#1b1b1b] rounded-xl overflow-hidden shadow-[3px_3px_0px_0px_#1b1b1b] flex flex-col">
         <div className="bg-[#1d577a] text-white px-4 py-2.5 font-bold text-xs tracking-wide uppercase">
           {categoryName}
         </div>
         <div className="divide-y divide-[#dcdad5]">
-          {slots.map(slot => {
-            if (!slot.name) {
-              return (
-                <div key={slot.code} className="px-4 py-3 text-xs text-zinc-400 bg-zinc-50/50 font-semibold min-h-[42px] flex items-center">
-                  <span className="font-bold text-zinc-400 mr-3">{slot.code}</span>
-                  <span className="italic">Not deployed</span>
-                </div>
-              );
-            }
-            return (
-              <div 
-                key={slot.code} 
-                onClick={() => {
-                  if (slot.deployed && !(slot as any).is_locked) {
-                    router.push(`/dashboard/modules/${slot.code}`);
-                  }
-                }}
-                className={`px-4 py-3 text-xs font-bold flex items-center gap-3 transition min-h-[42px] ${
-                  slot.deployed && !(slot as any).is_locked
-                    ? 'hover:bg-indigo-50/60 cursor-pointer text-[#1b1b1b]' 
-                    : 'text-zinc-400 bg-zinc-50/50 cursor-not-allowed text-zinc-400'
-                }`}
-              >
-                <span className="font-bold text-[#575ECF]">{slot.code}</span>
-                <span>{slot.name}</span>
-                {(slot as any).is_locked && (
-                  <Lock className="w-3.5 h-3.5 text-red-500 ml-auto shrink-0 animate-pulse" />
-                )}
-                {!slot.deployed && (
-                  <span className="ml-auto text-[8px] uppercase tracking-wider bg-zinc-200 text-zinc-500 px-1.5 py-0.5 rounded font-bold">
-                    Yet to deploy
-                  </span>
-                )}
-              </div>
-            );
-          })}
+          {slots.map(slot => (
+            <div 
+              key={slot.code} 
+              onClick={() => {
+                if (slot.deployed && !(slot as any).is_locked) {
+                  router.push(`/dashboard/modules/${slot.code}`);
+                }
+              }}
+              className={`px-4 py-3 text-xs font-bold flex items-center gap-3 transition min-h-[42px] ${
+                slot.deployed && !(slot as any).is_locked
+                  ? 'hover:bg-indigo-50/60 cursor-pointer text-[#1b1b1b]' 
+                  : 'text-zinc-400 bg-zinc-50/50 cursor-not-allowed text-zinc-400'
+              }`}
+            >
+              <span className="font-bold text-[#575ECF]">{slot.code}</span>
+              <span>{slot.name}</span>
+              {(slot as any).is_locked && (
+                <Lock className="w-3.5 h-3.5 text-red-500 ml-auto shrink-0 animate-pulse" />
+              )}
+            </div>
+          ))}
         </div>
       </div>
     );
