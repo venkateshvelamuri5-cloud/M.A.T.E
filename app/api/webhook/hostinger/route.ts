@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
   let limitMax = 10;
   let webhookId: string | null = null;
   let bodyText = '';
+  let profile: any = null;
 
   try {
     // 1. Verify signatures if webhook secret is configured
@@ -99,11 +100,13 @@ export async function POST(req: NextRequest) {
 
     // 3. Connect to Supabase to verify user profiles and limits
     try {
-      let { data: profile, error: profileErr } = await supabase
+      const { data: dbProfile, error: profileErr } = await supabase
         .from('profiles')
-        .select('id, subscription_plan')
+        .select('id, subscription_plan, email, full_name, rank, company_name, vessel_name, vessel_type, operator_name, grt, has_pump_room, pump_system_type, has_bow_thruster, carries_chemical_cargo, has_egcs, egcs_type, operates_us_waters, operates_aus_nz_waters, operates_eu_waters, operates_chinese_waters')
         .or(`email.eq.${from},vessel_email.eq.${from}`)
         .maybeSingle();
+
+      profile = dbProfile;
 
       if (profileErr) {
         console.warn('Supabase profile query encountered error:', profileErr.message);
@@ -325,9 +328,26 @@ export async function POST(req: NextRequest) {
     }
 
     if (promptQuery) {
+      const marinerProfilePrompt = `
+Vessel Particulars & Systems:
+- Vessel Name: ${profile?.vessel_name || 'N/A'} (Type: ${profile?.vessel_type || 'N/A'})
+- Operator: ${profile?.operator_name || 'N/A'} | GRT: ${profile?.grt || 'N/A'}
+- Machinery config: ${profile?.has_pump_room ? 'Traditional Pump Room' : `Deepwell pumps (${profile?.pump_system_type || 'FRAMO'})`}
+- Bow Thruster: ${profile?.has_bow_thruster ? 'Fitted' : 'Not fitted'}
+- Chemical Cargo capability: ${profile?.carries_chemical_cargo ? 'Yes' : 'No'}
+- EGCS (Scrubber): ${profile?.has_egcs ? (profile?.egcs_type || 'Open Loop') : 'None'}
+- Active trading regions: US: ${!!profile?.operates_us_waters}, AUS/NZ: ${!!profile?.operates_aus_nz_waters}, EU: ${!!profile?.operates_eu_waters}, China: ${!!profile?.operates_chinese_waters}
+
+Mariner Profile:
+- Full Name: ${profile?.full_name || 'N/A'}
+- Rank: ${profile?.rank || 'N/A'}
+- Company: ${profile?.company_name || 'N/A'}
+- User Email: ${profile?.email || from}
+`;
+
       processedResult = await gemini.runGroundedQuery(
         promptQuery, 
-        `${scrubbedText}\n\n${fileReferenceContext}`,
+        `${marinerProfilePrompt}\n\n${scrubbedText}\n\n${fileReferenceContext}`,
         pdfAttachments,
         selectedAgentPrompt
       );

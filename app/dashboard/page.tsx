@@ -313,6 +313,36 @@ export default function UserDashboard() {
   const [companyInput, setCompanyInput] = useState('');
   const [vesselEmailInput, setVesselEmailInput] = useState('');
 
+  // Expanded vessel details states
+  const [vesselNameInput, setVesselNameInput] = useState('');
+  const [vesselTypeInput, setVesselTypeInput] = useState('');
+  const [operatorNameInput, setOperatorNameInput] = useState('');
+  const [grtInput, setGrtInput] = useState('');
+
+  // Pump room & systems states
+  const [hasPumpRoom, setHasPumpRoom] = useState(true);
+  const [pumpSystemType, setPumpSystemType] = useState('N/A');
+
+  // Bow thruster & cargo
+  const [hasBowThruster, setHasBowThruster] = useState(false);
+  const [carriesChemicalCargo, setCarriesChemicalCargo] = useState(false);
+
+  // EGCS (Scrubber)
+  const [hasEgcs, setHasEgcs] = useState(false);
+  const [egcsType, setEgcsType] = useState('N/A');
+
+  // Operating regions
+  const [operatesUsWaters, setOperatesUsWaters] = useState(false);
+  const [operatesAusNzWaters, setOperatesAusNzWaters] = useState(false);
+  const [operatesEuWaters, setOperatesEuWaters] = useState(false);
+  const [operatesChineseWaters, setOperatesChineseWaters] = useState(false);
+
+  // Interactive help modal toggles
+  const [showWorkflowHelp, setShowWorkflowHelp] = useState(false);
+  const [showWebUiHelp, setShowWebUiHelp] = useState(false);
+  const [showEmailHelp, setShowEmailHelp] = useState(false);
+
+
   // Dashboard metrics states
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agentTemplates, setAgentTemplates] = useState<AgentTemplate[]>([]);
@@ -659,6 +689,20 @@ export default function UserDashboard() {
           setRankInput(profile.rank || '');
           setCompanyInput(profile.company_name || '');
           setVesselEmailInput(profile.vessel_email || '');
+          setVesselNameInput(profile.vessel_name || '');
+          setVesselTypeInput(profile.vessel_type || '');
+          setOperatorNameInput(profile.operator_name || '');
+          setGrtInput(profile.grt || '');
+          setHasPumpRoom(profile.has_pump_room !== false);
+          setPumpSystemType(profile.pump_system_type || 'N/A');
+          setHasBowThruster(!!profile.has_bow_thruster);
+          setCarriesChemicalCargo(!!profile.carries_chemical_cargo);
+          setHasEgcs(!!profile.has_egcs);
+          setEgcsType(profile.egcs_type || 'N/A');
+          setOperatesUsWaters(!!profile.operates_us_waters);
+          setOperatesAusNzWaters(!!profile.operates_aus_nz_waters);
+          setOperatesEuWaters(!!profile.operates_eu_waters);
+          setOperatesChineseWaters(!!profile.operates_chinese_waters);
         }
       }
 
@@ -793,7 +837,21 @@ export default function UserDashboard() {
           full_name: fullNameInput || null,
           company_name: companyInput || null,
           rank: rankInput || null,
-          vessel_email: vesselEmailInput || null
+          vessel_email: vesselEmailInput || null,
+          vessel_name: vesselNameInput || null,
+          vessel_type: vesselTypeInput || null,
+          operator_name: operatorNameInput || null,
+          grt: grtInput || null,
+          has_pump_room: hasPumpRoom,
+          pump_system_type: hasPumpRoom ? 'N/A' : pumpSystemType,
+          has_bow_thruster: hasBowThruster,
+          carries_chemical_cargo: carriesChemicalCargo,
+          has_egcs: hasEgcs,
+          egcs_type: hasEgcs ? egcsType : 'N/A',
+          operates_us_waters: operatesUsWaters,
+          operates_aus_nz_waters: operatesAusNzWaters,
+          operates_eu_waters: operatesEuWaters,
+          operates_chinese_waters: operatesChineseWaters
         })
         .eq('id', userId);
 
@@ -1305,11 +1363,37 @@ export default function UserDashboard() {
         <div className="lg:col-span-1 space-y-6">
           
           {/* Authenticated Officer block */}
-          <div className="bg-white border border-[#1b1b1b] p-6 rounded-lg shadow-sm">
-            <h3 className="font-bold text-sm underline text-[#1b1b1b] mb-4">Authenticated Officer</h3>
-            <div className="space-y-2 text-xs font-semibold text-zinc-700">
-              <div>Name : <span className="text-[#1b1b1b] ml-1">{fullNameInput || 'Officer'}</span></div>
-              <div>Rank : <span className="text-[#1b1b1b] ml-1">{rankInput || 'Unspecified Rank'}</span></div>
+          <div className="bg-white border border-[#1b1b1b] p-6 rounded-lg shadow-sm space-y-4">
+            <h3 className="font-bold text-sm underline text-[#1b1b1b]">Authenticated Officer</h3>
+            <div className="space-y-3.5 text-xs font-semibold text-zinc-700">
+              <div className="border-b border-zinc-100 pb-2">
+                <span className="text-zinc-400 block text-[9px] uppercase tracking-wider">Mariner Profile</span>
+                <div className="mt-1">Name: <span className="text-[#1b1b1b]">{fullNameInput || 'Officer'}</span></div>
+                <div>Rank: <span className="text-[#1b1b1b]">{rankInput || 'Unspecified'}</span></div>
+                <div>Company: <span className="text-[#1b1b1b]">{companyInput || 'Unspecified'}</span></div>
+              </div>
+
+              <div className="border-b border-zinc-100 pb-2">
+                <span className="text-zinc-400 block text-[9px] uppercase tracking-wider">Vessel Particulars</span>
+                <div className="mt-1">Vessel: <span className="text-[#1b1b1b]">{vesselNameInput || 'Unspecified'}</span></div>
+                <div>Type: <span className="text-[#1b1b1b]">{vesselTypeInput || 'Unspecified'}</span></div>
+                <div>Operator: <span className="text-[#1b1b1b]">{operatorNameInput || 'Unspecified'}</span></div>
+                <div>GRT: <span className="text-[#1b1b1b]">{grtInput || 'Unspecified'}</span></div>
+              </div>
+
+              <div>
+                <span className="text-zinc-400 block text-[9px] uppercase tracking-wider">Machinery &amp; Trading</span>
+                <div className="mt-1">Pumping: <span className="text-[#1b1b1b]">{hasPumpRoom ? 'Pump Room' : `Deepwell Pumps (${pumpSystemType})`}</span></div>
+                <div>Bow Thruster: <span className="text-[#1b1b1b]">{hasBowThruster ? 'Fitted' : 'Not Fitted'}</span></div>
+                <div>Chem Cargo: <span className="text-[#1b1b1b]">{carriesChemicalCargo ? 'Yes' : 'No'}</span></div>
+                <div>EGCS: <span className="text-[#1b1b1b]">{hasEgcs ? egcsType : 'None'}</span></div>
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {operatesUsWaters && <span className="px-1.5 py-0.5 bg-indigo-50 text-[#575ECF] text-[9px] rounded font-bold border border-indigo-200">US</span>}
+                  {operatesAusNzWaters && <span className="px-1.5 py-0.5 bg-indigo-50 text-[#575ECF] text-[9px] rounded font-bold border border-indigo-200">AUS/NZ</span>}
+                  {operatesEuWaters && <span className="px-1.5 py-0.5 bg-indigo-50 text-[#575ECF] text-[9px] rounded font-bold border border-indigo-200">EU</span>}
+                  {operatesChineseWaters && <span className="px-1.5 py-0.5 bg-indigo-50 text-[#575ECF] text-[9px] rounded font-bold border border-indigo-200">China</span>}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1383,6 +1467,31 @@ export default function UserDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+
+          {/* Help & Onboarding Guidelines (3 Cards/Buttons) */}
+          <div className="bg-white border-2 border-[#1b1b1b] p-4 rounded-xl shadow-[4px_4px_0px_0px_#1b1b1b] space-y-3">
+            <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">// User Guides</h4>
+            <div className="grid grid-cols-1 gap-2">
+              <button 
+                onClick={() => setShowWorkflowHelp(true)}
+                className="w-full py-3 px-4 bg-[#FCFBF8] border border-[#1b1b1b] hover:bg-indigo-50/40 text-[#1b1b1b] rounded-lg text-xs font-extrabold uppercase tracking-wide text-center transition shadow-[2px_2px_0px_0px_#1b1b1b] active:translate-y-0.5 active:shadow-[1px_1px_0px_0px_#1b1b1b]"
+              >
+                Understand the AI workflow
+              </button>
+              <button 
+                onClick={() => setShowWebUiHelp(true)}
+                className="w-full py-3 px-4 bg-[#FCFBF8] border border-[#1b1b1b] hover:bg-indigo-50/40 text-[#1b1b1b] rounded-lg text-xs font-extrabold uppercase tracking-wide text-center transition shadow-[2px_2px_0px_0px_#1b1b1b] active:translate-y-0.5 active:shadow-[1px_1px_0px_0px_#1b1b1b]"
+              >
+                How to query via <span className="text-[#575ECF] underline">WEB UI</span>
+              </button>
+              <button 
+                onClick={() => setShowEmailHelp(true)}
+                className="w-full py-3 px-4 bg-[#FCFBF8] border border-[#1b1b1b] hover:bg-indigo-50/40 text-[#1b1b1b] rounded-lg text-xs font-extrabold uppercase tracking-wide text-center transition shadow-[2px_2px_0px_0px_#1b1b1b] active:translate-y-0.5 active:shadow-[1px_1px_0px_0px_#1b1b1b]"
+              >
+                How to query via <span className="text-red-600 underline">eMail</span>
+              </button>
+            </div>
           </div>
 
         </div>
@@ -1554,6 +1663,184 @@ export default function UserDashboard() {
                 />
               </div>
 
+              <div className="border-t border-border/60 pt-3">
+                <h4 className="text-[10px] font-black text-deep uppercase tracking-wider mb-3">// Vessel Particulars</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Vessel Name</label>
+                    <input 
+                      type="text" 
+                      value={vesselNameInput}
+                      onChange={e => setVesselNameInput(e.target.value)}
+                      placeholder="e.g. Pioneer Mariner"
+                      className="w-full px-3 py-2 border border-border focus:border-gold bg-[#FAF9F6] rounded-xl text-xs outline-none text-foreground transition font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Vessel Type</label>
+                    <input 
+                      type="text" 
+                      value={vesselTypeInput}
+                      onChange={e => setVesselTypeInput(e.target.value)}
+                      placeholder="e.g. Oil Tanker, Bulk Carrier"
+                      className="w-full px-3 py-2 border border-border focus:border-gold bg-[#FAF9F6] rounded-xl text-xs outline-none text-foreground transition font-medium"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Operator Name</label>
+                  <input 
+                    type="text" 
+                    value={operatorNameInput}
+                    onChange={e => setOperatorNameInput(e.target.value)}
+                    placeholder="e.g. V-Ships, Anglo-Eastern"
+                    className="w-full px-3 py-2 border border-border focus:border-gold bg-[#FAF9F6] rounded-xl text-xs outline-none text-foreground transition font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1">GRT</label>
+                  <input 
+                    type="text" 
+                    value={grtInput}
+                    onChange={e => setGrtInput(e.target.value)}
+                    placeholder="e.g. 45,000"
+                    className="w-full px-3 py-2 border border-border focus:border-gold bg-[#FAF9F6] rounded-xl text-xs outline-none text-foreground transition font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="border-t border-border/60 pt-3 space-y-3">
+                <h4 className="text-[10px] font-black text-deep uppercase tracking-wider">// Machinery &amp; Cargo</h4>
+                
+                <div className="flex items-center gap-2.5 p-2 bg-[#FAF9F6] border border-border rounded-xl">
+                  <input 
+                    type="checkbox" 
+                    id="hasPumpRoomCheck"
+                    checked={hasPumpRoom}
+                    onChange={e => {
+                      setHasPumpRoom(e.target.checked);
+                      if (e.target.checked) setPumpSystemType('N/A');
+                      else setPumpSystemType('FRAMO');
+                    }}
+                    className="w-4 h-4 text-[#575ECF] rounded border-border cursor-pointer focus:ring-0"
+                  />
+                  <label htmlFor="hasPumpRoomCheck" className="font-semibold text-zinc-700 cursor-pointer select-none">Vessel has a Pump Room?</label>
+                </div>
+
+                {!hasPumpRoom && (
+                  <div>
+                    <label className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Deepwell Pump System Type</label>
+                    <select 
+                      value={pumpSystemType}
+                      onChange={e => setPumpSystemType(e.target.value)}
+                      className="w-full px-3 py-2 border border-border focus:border-gold bg-[#FAF9F6] rounded-xl text-xs outline-none text-foreground font-semibold"
+                    >
+                      <option value="FRAMO">FRAMO System</option>
+                      <option value="MARFLEX">MARFLEX System</option>
+                    </select>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex items-center gap-2 p-2 bg-[#FAF9F6] border border-border rounded-xl">
+                    <input 
+                      type="checkbox" 
+                      id="hasBowThrusterCheck"
+                      checked={hasBowThruster}
+                      onChange={e => setHasBowThruster(e.target.checked)}
+                      className="w-4 h-4 text-[#575ECF] rounded border-border cursor-pointer focus:ring-0"
+                    />
+                    <label htmlFor="hasBowThrusterCheck" className="font-semibold text-zinc-700 cursor-pointer select-none">Bow Thruster?</label>
+                  </div>
+
+                  <div className="flex items-center gap-2 p-2 bg-[#FAF9F6] border border-border rounded-xl">
+                    <input 
+                      type="checkbox" 
+                      id="carriesChemCheck"
+                      checked={carriesChemicalCargo}
+                      onChange={e => setCarriesChemicalCargo(e.target.checked)}
+                      className="w-4 h-4 text-[#575ECF] rounded border-border cursor-pointer focus:ring-0"
+                    />
+                    <label htmlFor="carriesChemCheck" className="font-semibold text-zinc-700 cursor-pointer select-none">Chem Cargo?</label>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 p-2 bg-[#FAF9F6] border border-border rounded-xl">
+                  <input 
+                    type="checkbox" 
+                    id="hasEgcsCheck"
+                    checked={hasEgcs}
+                    onChange={e => {
+                      setHasEgcs(e.target.checked);
+                      if (e.target.checked) setEgcsType('Open Loop');
+                      else setEgcsType('N/A');
+                    }}
+                    className="w-4 h-4 text-[#575ECF] rounded border-border cursor-pointer focus:ring-0"
+                  />
+                  <label htmlFor="hasEgcsCheck" className="font-semibold text-zinc-700 cursor-pointer select-none">EGCS Scrubber?</label>
+                </div>
+
+                {hasEgcs && (
+                  <div>
+                    <label className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1">EGCS Scrubber Configuration</label>
+                    <select 
+                      value={egcsType}
+                      onChange={e => setEgcsType(e.target.value)}
+                      className="w-full px-3 py-2 border border-border focus:border-gold bg-[#FAF9F6] rounded-xl text-xs outline-none text-foreground font-semibold"
+                    >
+                      <option value="Open Loop">Open Loop System</option>
+                      <option value="Closed Loop">Closed Loop System</option>
+                      <option value="Hybrid">Hybrid System</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-border/60 pt-3 space-y-2">
+                <h4 className="text-[10px] font-black text-deep uppercase tracking-wider">// Active Trading Regions</h4>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <label className="flex items-center gap-2 p-2 bg-[#FAF9F6] border border-border rounded-xl cursor-pointer font-semibold text-zinc-700 select-none">
+                    <input 
+                      type="checkbox" 
+                      checked={operatesUsWaters}
+                      onChange={e => setOperatesUsWaters(e.target.checked)}
+                      className="w-4 h-4 text-[#575ECF] rounded border-border cursor-pointer focus:ring-0"
+                    />
+                    US Waters
+                  </label>
+                  <label className="flex items-center gap-2 p-2 bg-[#FAF9F6] border border-border rounded-xl cursor-pointer font-semibold text-zinc-700 select-none">
+                    <input 
+                      type="checkbox" 
+                      checked={operatesAusNzWaters}
+                      onChange={e => setOperatesAusNzWaters(e.target.checked)}
+                      className="w-4 h-4 text-[#575ECF] rounded border-border cursor-pointer focus:ring-0"
+                    />
+                    AUS / NZ
+                  </label>
+                  <label className="flex items-center gap-2 p-2 bg-[#FAF9F6] border border-border rounded-xl cursor-pointer font-semibold text-zinc-700 select-none">
+                    <input 
+                      type="checkbox" 
+                      checked={operatesEuWaters}
+                      onChange={e => setOperatesEuWaters(e.target.checked)}
+                      className="w-4 h-4 text-[#575ECF] rounded border-border cursor-pointer focus:ring-0"
+                    />
+                    EU Waters
+                  </label>
+                  <label className="flex items-center gap-2 p-2 bg-[#FAF9F6] border border-border rounded-xl cursor-pointer font-semibold text-zinc-700 select-none">
+                    <input 
+                      type="checkbox" 
+                      checked={operatesChineseWaters}
+                      onChange={e => setOperatesChineseWaters(e.target.checked)}
+                      className="w-4 h-4 text-[#575ECF] rounded border-border cursor-pointer focus:ring-0"
+                    />
+                    Chinese Waters
+                  </label>
+                </div>
+              </div>
+
               <div className="pt-4 flex justify-end gap-2 border-t border-border/60">
                 <button 
                   type="button"
@@ -1599,7 +1886,130 @@ export default function UserDashboard() {
           </div>
         </div>
       )}
+
+      {/* Guide Modal 1: Understand the AI workflow */}
+      {showWorkflowHelp && (
+        <div className="fixed inset-0 bg-[#1b1b1b]/50 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+          <div className="w-full max-w-2xl bg-white border-2 border-[#1b1b1b] rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-[#1b1b1b] px-6 py-4 flex justify-between items-center shrink-0">
+              <span className="font-mono text-xs font-black text-white uppercase tracking-widest">// AI Document Generation Pipeline</span>
+              <button onClick={() => setShowWorkflowHelp(false)} className="p-1 text-white hover:bg-white/20 rounded-full transition"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="overflow-y-auto p-6 space-y-6 font-sans text-xs bg-[#FCFBF8] text-[#1b1b1b] leading-relaxed">
+              <div>
+                <h4 className="font-black text-sm text-[#1b1b1b] mb-2 uppercase tracking-wide">1. Query Parsing &amp; Initial Redaction</h4>
+                <p className="text-zinc-600 font-medium">
+                  When a safety inquiry is received (via Email or Web UI), the system runs an early scrubbing check.
+                  It redacts sensitive personal data (PII) like telephone numbers, personal emails, and individual names.
+                </p>
+              </div>
+
+              <div>
+                <h4 className="font-black text-sm text-[#1b1b1b] mb-2 uppercase tracking-wide">2. Document Grounding &amp; Context Retrieval</h4>
+                <p className="text-zinc-600 font-medium">
+                  The system checks your **Dedicated Workspace** for selected manuals or logs, and fetches active manuals linked by the Analyst (e.g. vessel SMS details, safety checklist items).
+                  It extracts raw text files and feeds them directly as custom contextual layers.
+                </p>
+              </div>
+
+              <div>
+                <h4 className="font-black text-sm text-[#1b1b1b] mb-2 uppercase tracking-wide">3. Tailored Prompt Generation &amp; Delivery</h4>
+                <p className="text-zinc-600 font-medium">
+                  The active agent's system directives (the Captain prompt) are combined with your **Vessel Particulars** (vessel name, pump room configurations, trading water regulations, and gross tonnage limits).
+                  The AI processes this complete bundle to produce professional checklists and guidelines.
+                </p>
+              </div>
+
+              <div className="bg-indigo-50 border border-indigo-200 p-4 rounded-xl space-y-2">
+                <span className="block font-black text-indigo-900 uppercase text-[10px] tracking-wider">// Why this is reliable:</span>
+                <p className="text-indigo-800 font-medium">
+                  Every response is "grounded" in your vessel specs. If you don't have a pump room but have FRAMO deepwell pumps, the risk assessment instructions will automatically address deepwell hydraulic safeguards rather than pump room gas levels.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Guide Modal 2: How to query via WEB UI */}
+      {showWebUiHelp && (
+        <div className="fixed inset-0 bg-[#1b1b1b]/50 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+          <div className="w-full max-w-2xl bg-white border-2 border-[#1b1b1b] rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-[#1b1b1b] px-6 py-4 flex justify-between items-center shrink-0">
+              <span className="font-mono text-xs font-black text-white uppercase tracking-widest">// UI Dashboard Execution Guide</span>
+              <button onClick={() => setShowWebUiHelp(false)} className="p-1 text-white hover:bg-white/20 rounded-full transition"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="overflow-y-auto p-6 space-y-5 font-sans text-xs bg-[#FCFBF8] text-[#1b1b1b] leading-relaxed">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 bg-white border border-[#dcdad5] rounded-xl space-y-2">
+                  <span className="block font-black text-xs text-[#1b1b1b]">Step 1: Pick a Module Card</span>
+                  <p className="text-zinc-500 font-medium">Click on any active card on your dashboard matching your target task (e.g. A1 Risk Assessment).</p>
+                </div>
+
+                <div className="p-4 bg-white border border-[#dcdad5] rounded-xl space-y-2">
+                  <span className="block font-black text-xs text-[#1b1b1b]">Step 2: Enter Prompt Requirements</span>
+                  <p className="text-zinc-500 font-medium">Describe your request in Step 1. In Step 2, optionally specify items you want included in the response.</p>
+                </div>
+
+                <div className="p-4 bg-white border border-[#dcdad5] rounded-xl space-y-2">
+                  <span className="block font-black text-xs text-[#1b1b1b]">Step 3: Reference Documents</span>
+                  <p className="text-zinc-500 font-medium">Check the boxes of files you want linked, or drag-and-drop a new document in Step 3. Uploaded documents save directly to your workspace.</p>
+                </div>
+
+                <div className="p-4 bg-white border border-[#dcdad5] rounded-xl space-y-2">
+                  <span className="block font-black text-xs text-[#1b1b1b]">Step 4: Execute &amp; Download</span>
+                  <p className="text-zinc-500 font-medium">Toggle email delivery if you want a backup, and click Submit. Your response compiles live and renders in the terminal panel.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Guide Modal 3: How to query via eMail */}
+      {showEmailHelp && (
+        <div className="fixed inset-0 bg-[#1b1b1b]/50 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+          <div className="w-full max-w-2xl bg-white border-2 border-[#1b1b1b] rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="bg-[#1b1b1b] px-6 py-4 flex justify-between items-center shrink-0">
+              <span className="font-mono text-xs font-black text-white uppercase tracking-widest">// Inbound eMail Query Template</span>
+              <button onClick={() => setShowEmailHelp(false)} className="p-1 text-white hover:bg-white/20 rounded-full transition"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="overflow-y-auto p-6 space-y-5 font-sans text-xs bg-[#FCFBF8] text-[#1b1b1b] leading-relaxed">
+              <div>
+                <h4 className="font-black text-sm text-[#1b1b1b] mb-1.5 uppercase tracking-wide">Email Target &amp; Identification</h4>
+                <p className="text-zinc-600 font-medium">
+                  Send emails to **hello@logmark-ai.com** from either your registered primary login email or the dedicated **Interaction Email** configured in your workspace settings.
+                </p>
+              </div>
+
+              <div>
+                <h4 className="font-black text-sm text-[#1b1b1b] mb-1.5 uppercase tracking-wide">Guaranteed Subject Tag Override (Layer 1)</h4>
+                <p className="text-zinc-600 font-medium mb-2">
+                  Prefix the subject line with a brackets slot code to bypass AI classification. This ensures it loads the correct custom system prompt.
+                </p>
+                <div className="bg-zinc-100 p-3 rounded-lg font-mono text-[11px] border border-zinc-200">
+                  Subject: <strong className="text-zinc-800">[A1] Risk Assessment for main deck welding</strong>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-black text-sm text-[#1b1b1b] mb-1.5 uppercase tracking-wide">Keyword Pre-Match (Layer 2)</h4>
+                <p className="text-zinc-600 font-medium">
+                  If no subject code is found, the system searches the subject/body for keywords configured by the Analyst.
+                  For example, containing the phrase **"Risk Assessment"** or **"RA"** automatically routes the email to the A1 agent without AI guessing.
+                </p>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl space-y-2">
+                <span className="block font-black text-amber-900 uppercase text-[10px] tracking-wider">// Tip for Attachments:</span>
+                <p className="text-amber-800 font-medium">
+                  You can attach PDF files to your email. The system downloads them, reads the contents, and incorporates them into the response context!
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
