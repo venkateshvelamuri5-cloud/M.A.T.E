@@ -1102,13 +1102,14 @@ export default function AnalystPortal() {
                     <th className="py-3 px-4">User Email</th>
                     <th className="py-3 px-4">Subject Query</th>
                     <th className="py-3 px-4">Invoked Agent</th>
+                    <th className="py-3 px-4">Token Metrics &amp; Cost</th>
                     <th className="py-3 px-4">Execution Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-8 text-center text-zinc-450 italic font-medium">
+                      <td colSpan={6} className="py-8 text-center text-zinc-450 italic font-medium">
                         No activity logs match your filter criteria.
                       </td>
                     </tr>
@@ -1132,6 +1133,25 @@ export default function AnalystPortal() {
                           ) : (
                             <span className="text-muted-foreground/80 italic font-medium">None / Global</span>
                           )}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex flex-col gap-0.5 font-mono text-[9px] text-zinc-600 bg-indigo-50/60 p-2 rounded-lg border border-indigo-100 max-w-[130px]">
+                            <div className="flex justify-between gap-1">
+                              <span>In:</span>
+                              <span className="font-bold">{(log as any).input_tokens || 0}</span>
+                            </div>
+                            <div className="flex justify-between gap-1">
+                              <span>Out:</span>
+                              <span className="font-bold">{(log as any).output_tokens || 0}</span>
+                            </div>
+                            <div className="flex justify-between gap-1 border-t border-indigo-200/50 pt-0.5 mt-0.5">
+                              <span>Cost:</span>
+                              <span className="font-bold text-indigo-700">${(log as any).run_cost ? parseFloat((log as any).run_cost).toFixed(4) : '0.0000'}</span>
+                            </div>
+                            <div className="text-[8px] text-zinc-400 mt-0.5 border-t border-indigo-200/30 pt-0.5 truncate" title={(log as any).routing_layer || 'N/A'}>
+                              Route: {(log as any).routing_layer || 'N/A'}
+                            </div>
+                          </div>
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap">
                           <div className="flex flex-col gap-1">
