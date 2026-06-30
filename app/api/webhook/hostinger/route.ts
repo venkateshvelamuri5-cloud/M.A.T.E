@@ -182,6 +182,60 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Limit exceeded: 10/10 community interactions used. Upgrade via Stripe.' }, { status: 403 });
     }
 
+    // Check if the user has already sent an email with the exact same content and received a response.
+    // If so, we bypass the AI run entirely and resend the cached response.
+    if (userId && subject && bodyText) {
+      try {
+        const { data: duplicateLog } = await supabase
+          .from('interactions_log')
+          .select('id, email_response')
+          .eq('user_id', userId)
+          .eq('subject', subject.trim())
+          .eq('email_request', bodyText.trim())
+          .eq('status', 'Completed')
+          .not('email_response', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (duplicateLog && duplicateLog.email_response) {
+          console.log(`[DUPLICATE] Exact request subject & body match found. Resending cached response from interaction: ${duplicateLog.id}`);
+          
+          // Wrap and format output response HTML
+          const formattedHtml = wrapInEmailTemplate(formatMarkdownToHtml(duplicateLog.email_response));
+          
+          // Send cached response
+          const mailResponse = await smtp.sendMail({
+            to: from,
+            subject: `Re: ${subject}`,
+            text: `Hello,\n\nHere is the requested information:\n\n${duplicateLog.email_response}\n\nThank you for using M.A.T.E.`,
+            html: formattedHtml
+          });
+
+          // Update the lock record we inserted to reflect cached duplicate success
+          if (webhookId) {
+            await supabase
+              .from('interactions_log')
+              .update({
+                status: 'Completed',
+                subject: `[Duplicate Request] ${subject}`,
+                email_response: duplicateLog.email_response,
+                routing_layer: 'cached_duplicate'
+              })
+              .eq('webhook_id', webhookId);
+          }
+
+          return NextResponse.json({ 
+            success: true, 
+            message: 'Duplicate query handled using cached response',
+            messageId: mailResponse.messageId
+          });
+        }
+      } catch (dupErr) {
+        console.warn('Failed to query or handle duplicate check:', (dupErr as Error).message);
+      }
+    }
+
     // 4. Scrub PII and fetch context using Gemini
     const scrubbedText = await gemini.cleanAndScrubText(bodyText);
 
