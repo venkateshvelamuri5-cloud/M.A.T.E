@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '../../../../src/supabase-client';
 import { GeminiService } from '../../../../src/services/gemini';
 import { SmtpService } from '../../../../src/services/smtp';
+import { FileProcessor } from '../../../../src/services/fileProcessor';
 
 export async function POST(req: NextRequest) {
   const gemini = new GeminiService();
@@ -106,6 +107,7 @@ export async function POST(req: NextRequest) {
     // 4. Construct context from selected workspace files
     let fileReferenceContext = '';
     const pdfAttachments: Array<{ data: Buffer; mimeType: string }> = [];
+    FileProcessor.resetCache();
 
     // Extract keywords for Strategy 2 (Lightweight RAG filtering)
     const stopWords = new Set(['what', 'make', 'vessel', 'please', 'with', 'from', 'about', 'need', 'have', 'does', 'show', 'your', 'were', 'that', 'this', 'there', 'their', 'only', 'also', 'include', 'report', 'send', 'query', 'task', 'run', 'agent']);
@@ -137,8 +139,8 @@ export async function POST(req: NextRequest) {
       if (files && files.length > 0) {
         for (const file of files) {
           const { data: fileBlob } = await supabase.storage
-            .from('user-spaces')
-            .download(file.storage_path);
+             .from('user-spaces')
+             .download(file.storage_path);
 
           if (fileBlob) {
             const fileExt = (file.file_type || '').toLowerCase();
@@ -171,7 +173,10 @@ export async function POST(req: NextRequest) {
                   mimeType: 'application/pdf'
                 });
               } else {
-                fileReferenceContext += `\n\n--- Document: ${file.name} ---\n${fileTextContent}\n`;
+                const cleanedText = FileProcessor.cleanToMarkdown(fileTextContent, file.name);
+                if (cleanedText) {
+                  fileReferenceContext += `\n\n--- Document: ${file.name} ---\n${cleanedText}\n`;
+                }
               }
             }
           }

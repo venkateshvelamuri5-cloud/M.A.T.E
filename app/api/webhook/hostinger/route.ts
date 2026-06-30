@@ -3,6 +3,7 @@ import { supabase } from '../../../../src/supabase-client';
 import { GeminiService } from '../../../../src/services/gemini';
 import { GeneratorService } from '../../../../src/services/generator';
 import { SmtpService } from '../../../../src/services/smtp';
+import { FileProcessor } from '../../../../src/services/fileProcessor';
 
 /**
  * POST handler for Hostinger Webhook
@@ -282,6 +283,7 @@ export async function POST(req: NextRequest) {
 
         if (filesToDownload.length > 0) {
           console.log(`Total files to process for hybrid context: ${filesToDownload.length}`);
+          FileProcessor.resetCache();
           for (const fileRef of filesToDownload) {
             // Determine storage bucket: user space vs knowledge base
             const bucketName = (fileRef.agent_id || fileRef.user_id === '00000000-0000-0000-0000-000000000000')
@@ -299,15 +301,15 @@ export async function POST(req: NextRequest) {
             }
 
             const fileExt = (fileRef.file_type || '').toLowerCase();
+            let fileTextContent = '';
             if (fileExt === 'txt' || fileExt === 'md') {
-              const text = await fileBlob.text();
-              fileReferenceContext += `\n\n--- Document: ${fileRef.name} ---\n${text}\n`;
+              fileTextContent = await fileBlob.text();
             } else if (fileExt === 'docx') {
               const arrayBuffer = await fileBlob.arrayBuffer();
               try {
                 const mammoth = require('mammoth');
                 const result = await mammoth.extractRawText({ buffer: Buffer.from(arrayBuffer) });
-                fileReferenceContext += `\n\n--- Document: ${fileRef.name} ---\n${result.value}\n`;
+                fileTextContent = result.value;
               } catch (docxErr) {
                 console.error(`Error extracting text from DOCX ${fileRef.name}:`, docxErr);
               }
@@ -319,6 +321,13 @@ export async function POST(req: NextRequest) {
               });
             } else {
               console.log(`Skipping file parsing for unsupported extension: ${fileExt}`);
+            }
+
+            if (fileTextContent) {
+              const cleanedText = FileProcessor.cleanToMarkdown(fileTextContent, fileRef.name);
+              if (cleanedText) {
+                fileReferenceContext += `\n\n--- Document: ${fileRef.name} ---\n${cleanedText}\n`;
+              }
             }
           }
         }
