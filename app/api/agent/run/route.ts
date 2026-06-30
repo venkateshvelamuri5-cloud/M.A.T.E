@@ -219,6 +219,18 @@ Mariner Profile:
       .update({ interactions_count: limitCount + 1 })
       .eq('user_id', userId);
 
+    // Calculate Token Usage & Cost
+    const totalInputText = (queryInput || '') + '\n' + (marinerProfilePrompt || '') + '\n' + (fileReferenceContext || '') + '\n' + (agent.system_prompt || '');
+    const inputTokens = Math.ceil(totalInputText.length / 4);
+    const outputTokens = Math.ceil(processedResult.length / 4);
+    
+    // Gemini 2.5 Flash pay-as-you-go pricing (cost per 1M tokens)
+    const isHighContext = inputTokens > 128000;
+    const inputPricePerM = isHighContext ? 0.15 : 0.075;
+    const outputPricePerM = isHighContext ? 0.60 : 0.30;
+    
+    const runCost = ((inputTokens * inputPricePerM) / 1000000) + ((outputTokens * outputPricePerM) / 1000000);
+
     await supabase
       .from('interactions_log')
       .insert({
@@ -227,7 +239,11 @@ Mariner Profile:
         status: 'Completed',
         agent_id: agentId,
         email_request: queryInput,
-        email_response: processedResult
+        email_response: processedResult,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        run_cost: parseFloat(runCost.toFixed(6)),
+        routing_layer: 'Web Portal UI'
       });
 
     // Send email response if requested

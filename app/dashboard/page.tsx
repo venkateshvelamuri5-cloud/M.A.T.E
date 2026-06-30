@@ -349,6 +349,7 @@ export default function UserDashboard() {
   const [interactionsCount, setInteractionsCount] = useState(0);
   const [maxInteractions, setMaxInteractions] = useState(10);
   const [subscriptionPlan, setSubscriptionPlan] = useState('free');
+  const [userRole, setUserRole] = useState<'admin' | 'analyst' | 'operator'>('operator');
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [interactionHistory, setInteractionHistory] = useState<InteractionLog[]>([]);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
@@ -708,6 +709,7 @@ export default function UserDashboard() {
 
       if (profile) {
         setSubscriptionPlan(profile.subscription_plan);
+        setUserRole(profile.role || 'operator');
       }
 
       // 2. Fetch Limits
@@ -1542,6 +1544,15 @@ export default function UserDashboard() {
                       {log.subject}
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
+                      {(userRole === 'analyst' || userRole === 'admin') && (
+                        <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 bg-indigo-50 border border-indigo-150 rounded-md text-[9px] font-mono text-indigo-700">
+                          <span>In: {(log as any).input_tokens || 0}</span>
+                          <span className="text-indigo-300">|</span>
+                          <span>Out: {(log as any).output_tokens || 0}</span>
+                          <span className="text-indigo-300">|</span>
+                          <span className="font-bold">${(log as any).run_cost ? parseFloat((log as any).run_cost).toFixed(4) : '0.0000'}</span>
+                        </div>
+                      )}
                       <span className="text-zinc-400 text-[10px]">
                         {new Date(log.created_at || Date.now()).toISOString().replace('T', ' ').substring(0, 16)}
                       </span>
@@ -1583,6 +1594,27 @@ export default function UserDashboard() {
             </div>
             
             <div className="p-6 overflow-y-auto space-y-4 font-sans text-xs">
+              {(userRole === 'analyst' || userRole === 'admin') && (
+                <div className="grid grid-cols-4 gap-3 p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl font-mono text-[10px]">
+                  <div>
+                    <span className="block text-[8px] font-bold text-indigo-500 uppercase">Input Tokens</span>
+                    <span className="text-indigo-900 font-bold">{(selectedLog as any).input_tokens || 0}</span>
+                  </div>
+                  <div>
+                    <span className="block text-[8px] font-bold text-indigo-500 uppercase">Output Tokens</span>
+                    <span className="text-indigo-900 font-bold">{(selectedLog as any).output_tokens || 0}</span>
+                  </div>
+                  <div>
+                    <span className="block text-[8px] font-bold text-indigo-500 uppercase">Run Cost (USD)</span>
+                    <span className="text-indigo-900 font-bold">${(selectedLog as any).run_cost ? parseFloat((selectedLog as any).run_cost).toFixed(5) : '0.00000'}</span>
+                  </div>
+                  <div>
+                    <span className="block text-[8px] font-bold text-indigo-500 uppercase">Routing Layer</span>
+                    <span className="text-indigo-900 font-bold">{(selectedLog as any).routing_layer || 'N/A'}</span>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <span className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">// Email/Portal Request:</span>
                 <div className="bg-background border border-border p-4 rounded-xl text-foreground font-medium leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">

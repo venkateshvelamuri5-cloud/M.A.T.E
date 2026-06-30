@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
   let webhookId: string | null = null;
   let bodyText = '';
   let profile: any = null;
+  let marinerProfilePrompt = '';
 
   try {
     // 1. Verify signatures if webhook secret is configured
@@ -337,7 +338,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (promptQuery) {
-      const marinerProfilePrompt = `
+      marinerProfilePrompt = `
 Vessel Particulars & Systems:
 - Vessel Name: ${profile?.vessel_name || 'N/A'} (Type: ${profile?.vessel_type || 'N/A'})
 - Operator: ${profile?.operator_name || 'N/A'} | GRT: ${profile?.grt || 'N/A'}
@@ -447,6 +448,18 @@ Mariner Profile:
           .update({ interactions_count: limitCount + 1 })
           .eq('user_id', userId);
 
+        // Estimate tokens
+        const totalInputText = (promptQuery || '') + '\n' + (marinerProfilePrompt || '') + '\n' + (scrubbedText || '') + '\n' + (fileReferenceContext || '') + '\n' + (selectedAgentPrompt || '');
+        const inputTokens = Math.ceil(totalInputText.length / 4);
+        const outputTokens = Math.ceil(processedResult.length / 4);
+
+        // Gemini 2.5 Flash pay-as-you-go pricing (cost per 1M tokens)
+        const isHighContext = inputTokens > 128000;
+        const inputPricePerM = isHighContext ? 0.15 : 0.075;
+        const outputPricePerM = isHighContext ? 0.60 : 0.30;
+        
+        const runCost = ((inputTokens * inputPricePerM) / 1000000) + ((outputTokens * outputPricePerM) / 1000000);
+
         if (webhookId) {
           await supabase
             .from('interactions_log')
@@ -454,7 +467,10 @@ Mariner Profile:
               status: 'Completed',
               agent_id: selectedAgentId,
               email_response: processedResult,
-              routing_layer: routingLayer
+              routing_layer: routingLayer,
+              input_tokens: inputTokens,
+              output_tokens: outputTokens,
+              run_cost: parseFloat(runCost.toFixed(6))
             })
             .eq('webhook_id', webhookId);
         } else {
@@ -467,7 +483,10 @@ Mariner Profile:
               agent_id: selectedAgentId,
               email_request: bodyText,
               email_response: processedResult,
-              routing_layer: routingLayer
+              routing_layer: routingLayer,
+              input_tokens: inputTokens,
+              output_tokens: outputTokens,
+              run_cost: parseFloat(runCost.toFixed(6))
             });
         }
 
