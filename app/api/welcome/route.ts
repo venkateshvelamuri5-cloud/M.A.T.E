@@ -65,7 +65,7 @@ MODULES AVAILABLE
 HOW TO USE VIA EMAIL
 ===========================================
 
-Send your query to: hello@logmark-ai.com
+Send your query to: mate@logmark-ai.com
 From: Your registered vessel email address
 
 --- GUARANTEED ROUTING (Recommended) ---
@@ -90,7 +90,7 @@ from keywords in your email body. Common keywords:
 
 --- EMAIL FORMAT ---
 
-TO      : hello@logmark-ai.com
+TO      : mate@logmark-ai.com
 SUBJECT : [A1] Risk Assessment - X-band Radar
 BODY    :
   Step 1 - Your main query or requirement
@@ -101,7 +101,7 @@ ATTACHMENT: You may attach relevant PDF documents as reference material.
 
 --- EXAMPLE EMAIL ---
 
-TO      : hello@logmark-ai.com
+TO      : mate@logmark-ai.com
 SUBJECT : [A1] RA for X-band RADAR not working
 BODY    :
 Make a Risk Assessment for X-band RADAR failure.
@@ -210,7 +210,7 @@ export async function POST(req: NextRequest) {
         <td style="padding:8px 12px; background:#fff; border:1px solid #e0e7ff; border-radius:6px; width:48%; vertical-align:top;">
           <strong style="font-size:12px; color:#1e1b4b;">📧 Via Email</strong>
           <p style="font-size:11px; color:#555; margin:6px 0 0 0; line-height:1.5;">
-            Send queries from your vessel email to <strong>hello@logmark-ai.com</strong>.<br>
+            Send queries from your vessel email to <strong>mate@logmark-ai.com</strong>.<br>
             Use <strong>[A1]</strong> in your subject for guaranteed routing.
           </p>
         </td>
@@ -266,7 +266,7 @@ export async function POST(req: NextRequest) {
   <div style="background:#fff; border:1px solid #dcdad5; border-radius:8px; padding:14px; margin-bottom:24px;">
     <h3 style="font-size:12px; font-weight:bold; color:#0a1826; margin:0 0 8px 0;">Quick Email Example</h3>
     <p style="font-size:11px; color:#555; margin:0; line-height:1.8; font-family:monospace;">
-      TO: hello@logmark-ai.com<br>
+      TO: mate@logmark-ai.com<br>
       SUBJECT: <strong>[A1] RA for X-band RADAR fault</strong><br>
       BODY: Make a Risk Assessment for X-band RADAR not working.<br>
       &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Inform flag and class, obtain dispensation.<br>
@@ -283,7 +283,7 @@ export async function POST(req: NextRequest) {
     await smtp.sendMail({
       to: email,
       subject: `Welcome to M.A.T.E — Your Maritime AI Assistant is Ready`,
-      text: `Welcome to M.A.T.E, ${name}!\n\nYour workspace is now active. Please find your complete User Manual attached as a PDF.\n\nQuick start:\n- Email: Send queries to hello@logmark-ai.com from your vessel email. Use [A1] in subject for guaranteed routing.\n- Web UI: Login to your dashboard, select a module, fill Steps 1-4 and submit.\n\nDisclaimer: M.A.T.E can make mistakes. Please re-verify all outputs.\n\nFair winds!\nM.A.T.E Team`,
+      text: `Welcome to M.A.T.E, ${name}!\n\nYour workspace is now active. Please find your complete User Manual attached as a PDF.\n\nQuick start:\n- Email: Send queries to mate@logmark-ai.com from your vessel email. Use [A1] in subject for guaranteed routing.\n- Web UI: Login to your dashboard, select a module, fill Steps 1-4 and submit.\n\nDisclaimer: M.A.T.E can make mistakes. Please re-verify all outputs.\n\nFair winds!\nM.A.T.E Team`,
       html: htmlBody,
       attachments: [
         {

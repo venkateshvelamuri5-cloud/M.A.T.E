@@ -312,6 +312,9 @@ export default function UserDashboard() {
   const [rankInput, setRankInput] = useState('');
   const [companyInput, setCompanyInput] = useState('');
   const [vesselEmailInput, setVesselEmailInput] = useState('');
+  const [originalVesselEmail, setOriginalVesselEmail] = useState('');
+  const [vesselEmailLastChanged, setVesselEmailLastChanged] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState('user');
 
   // Expanded vessel details states
   const [vesselNameInput, setVesselNameInput] = useState('');
@@ -708,6 +711,9 @@ export default function UserDashboard() {
 
       if (profile) {
         setSubscriptionPlan(profile.subscription_plan);
+        setOriginalVesselEmail(profile.vessel_email || '');
+        setVesselEmailLastChanged(profile.vessel_email_last_changed || null);
+        setUserRole(profile.role || 'user');
       }
 
       // 2. Fetch Limits
@@ -831,6 +837,23 @@ export default function UserDashboard() {
     if (!userId) return;
     setStatusMsg("Saving workspace settings...");
     try {
+      const isEmailChanged = vesselEmailInput.trim() !== originalVesselEmail.trim();
+      const nowString = new Date().toISOString();
+
+      if (isEmailChanged) {
+        // Enforce 15 days limit check
+        if (vesselEmailLastChanged) {
+          const lastChangedTime = new Date(vesselEmailLastChanged).getTime();
+          const diffMs = Date.now() - lastChangedTime;
+          const diffDays = diffMs / (1000 * 60 * 60 * 24);
+          if (diffDays < 15) {
+            const daysRemaining = Math.ceil(15 - diffDays);
+            setStatusMsg(`Error: You can only change your Interaction Email once every 15 days. Next change allowed in ${daysRemaining} day(s).`);
+            return;
+          }
+        }
+      }
+
       const { error } = await supabase
         .from('profiles')
         .update({
@@ -838,6 +861,7 @@ export default function UserDashboard() {
           company_name: companyInput || null,
           rank: rankInput || null,
           vessel_email: vesselEmailInput || null,
+          vessel_email_last_changed: isEmailChanged ? nowString : vesselEmailLastChanged,
           vessel_name: vesselNameInput || null,
           vessel_type: vesselTypeInput || null,
           operator_name: operatorNameInput || null,
@@ -856,6 +880,12 @@ export default function UserDashboard() {
         .eq('id', userId);
 
       if (error) throw error;
+      
+      if (isEmailChanged) {
+        setOriginalVesselEmail(vesselEmailInput);
+        setVesselEmailLastChanged(nowString);
+      }
+
       setStatusMsg("Workspace settings updated successfully.");
       setIsSettingsOpen(false);
       fetchUserData(userId, emailInput);
@@ -1042,7 +1072,7 @@ export default function UserDashboard() {
   // VIEW 1: AGENT INTERACTIVE PORTAL (Image 2)
   // ----------------------------------------------------
 
-  const DEFAULT_USER_MANUAL = `M.A.T.E User Manual\n(for email Query)\n\n\nModules Available\n(A) ISM ADMIN WORKS\nA1 - Risk Assessment\nA2 - Audit Closure (work in progress)\nA3 - Drill Notes (work in progress)\nA4 - Training Minutes (work in progress)\n\n(B) ACCOUNTING & PAYROLL\nB1 - Payroll Calculation (work in progress)\nB2 - Vessel Accounts (Including Welfare a/c) (work in progress)\nB3 - Bond Accounting (work in progress)\nB4 - Victualling Accounting (work in progress)\n\n(C) CREW RELATED\nC1 - Port Papers (work in progress)\nC2 - Crew Certification (work in progress)\nC3 - \nC4 - \n\n(D) CARGO RELATED (Tankers)\nD1 - Voyage Orders, Simplified (work in progress)\nD2 - Cargo Calculations (work in progress)\nD3 - \nD4 - \n\n(E) INVENTORIES\nE1 - Ship's Library (work in progress)\nE2 - Ship's Certificates (work in progress)\nE3 - Medicine Chest (work in progress)\nE4 - Narcotics List (work in progress)\n\n(F) MISC, ADDITIONAL\nF1 - SMS Clarification (Using AI)\nF2 - Weather Reports\nF3 - SIRE 2.0\nF4 - General Maritime AI Query\n\n----------------------------------------------------\n(A1) RISK ASSESSMENT\n----------------------------------------------------\n\nThe email sent out can be formatted or plain text. Plain text option is preferred to minimize the outbound email data packet size.\n\nHOW TO :-\nTO : hello@logmark-ai.com\nSUBJECT : (Optional)\nBODY : Please ensure that you use one of the following keywords when generating your query:\n"RA", "RISK ASSESSMENT", "SAFETY ASSESSMENT", or "RISK ANALYSIS".\nPlease note that the AI 'may not' reliably process or recognize keywords outside of this list.\n\nIn a separate paragraph put in list of items you want the AI to mandatorily include in your risk assessment output.\n\nATTACHMENT : Any PDF relevant to the RA being generated can be added as an attachment; example - mail from office requiring points to be included in RA, extract of company manual or any other document that has relevant information that you want included in the risk assessment generated.\n\nNote that; additional text after the RA request and attachment addition are optional.\n\n----------------------------------------------------\nEXAMPLE :-\nTO : hello@logmark-ai.com\nSUBJECT : RA request by Capt.John\nBODY :\nMake a RA for X-band RADAR not working.\nInform flag and class, obtain dispensation\nATTACHMENT : eMail.pdf "(mail from office requesting RA to be made and points to be included)"\n----------------------------------------------------\n\nNote :- Pls read the workflow at the bottom of this document on how MATE generated the required response.\n\nABOUT THE WORKFLOW.\nUnderstanding the AI workflow allows for the creation of a tailored response that is highly accurate and specific to both you and your vessel type.\n\nThe M.A.T.E. workflow operates as follows:\nStep 1: M.A.T.E. receives your input and any additional information provided in the same query.\nStep 2: M.A.T.E. reviews any attachments included with your query.\nStep 3: M.A.T.E. references your user settings to curate a response specific to your configuration.\nStep 4: Where relevant, M.A.T.E. references company manuals from your downloads section to incorporate company-specific details into the generated response.\nNote: Please monitor your token usage, as processing or reviewing detailed manuals can consume a significant amount of your available tokens.\n\nxxx END xxx`;
+  const DEFAULT_USER_MANUAL = `M.A.T.E User Manual\n(for email Query)\n\n\nModules Available\n(A) ISM ADMIN WORKS\nA1 - Risk Assessment\nA2 - Audit Closure (work in progress)\nA3 - Drill Notes (work in progress)\nA4 - Training Minutes (work in progress)\n\n(B) ACCOUNTING & PAYROLL\nB1 - Payroll Calculation (work in progress)\nB2 - Vessel Accounts (Including Welfare a/c) (work in progress)\nB3 - Bond Accounting (work in progress)\nB4 - Victualling Accounting (work in progress)\n\n(C) CREW RELATED\nC1 - Port Papers (work in progress)\nC2 - Crew Certification (work in progress)\nC3 - \nC4 - \n\n(D) CARGO RELATED (Tankers)\nD1 - Voyage Orders, Simplified (work in progress)\nD2 - Cargo Calculations (work in progress)\nD3 - \nD4 - \n\n(E) INVENTORIES\nE1 - Ship's Library (work in progress)\nE2 - Ship's Certificates (work in progress)\nE3 - Medicine Chest (work in progress)\nE4 - Narcotics List (work in progress)\n\n(F) MISC, ADDITIONAL\nF1 - SMS Clarification (Using AI)\nF2 - Weather Reports\nF3 - SIRE 2.0\nF4 - General Maritime AI Query\n\n----------------------------------------------------\n(A1) RISK ASSESSMENT\n----------------------------------------------------\n\nThe email sent out can be formatted or plain text. Plain text option is preferred to minimize the outbound email data packet size.\n\nHOW TO :-\nTO : mate@logmark-ai.com\nSUBJECT : (Optional)\nBODY : Please ensure that you use one of the following keywords when generating your query:\n"RA", "RISK ASSESSMENT", "SAFETY ASSESSMENT", or "RISK ANALYSIS".\nPlease note that the AI 'may not' reliably process or recognize keywords outside of this list.\n\nIn a separate paragraph put in list of items you want the AI to mandatorily include in your risk assessment output.\n\nATTACHMENT : Any PDF relevant to the RA being generated can be added as an attachment; example - mail from office requiring points to be included in RA, extract of company manual or any other document that has relevant information that you want included in the risk assessment generated.\n\nNote that; additional text after the RA request and attachment addition are optional.\n\n----------------------------------------------------\nEXAMPLE :-\nTO : mate@logmark-ai.com\nSUBJECT : RA request by Capt.John\nBODY :\nMake a RA for X-band RADAR not working.\nInform flag and class, obtain dispensation\nATTACHMENT : eMail.pdf "(mail from office requesting RA to be made and points to be included)"\n----------------------------------------------------\n\nNote :- Pls read the workflow at the bottom of this document on how MATE generated the required response.\n\nABOUT THE WORKFLOW.\nUnderstanding the AI workflow allows for the creation of a tailored response that is highly accurate and specific to both you and your vessel type.\n\nThe M.A.T.E. workflow operates as follows:\nStep 1: M.A.T.E. receives your input and any additional information provided in the same query.\nStep 2: M.A.T.E. reviews any attachments included with your query.\nStep 3: M.A.T.E. references your user settings to curate a response specific to your configuration.\nStep 4: Where relevant, M.A.T.E. references company manuals from your downloads section to incorporate company-specific details into the generated response.\nNote: Please monitor your token usage, as processing or reviewing detailed manuals can consume a significant amount of your available tokens.\n\nxxx END xxx`;
 
   if (selectedAgentSlot) {
     return (
@@ -1569,12 +1599,14 @@ export default function UserDashboard() {
             </div>
             
             <div className="p-6 overflow-y-auto space-y-4 font-sans text-xs">
-              <div>
-                <span className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">// Email/Portal Request:</span>
-                <div className="bg-background border border-border p-4 rounded-xl text-foreground font-medium leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
-                  {selectedLog.email_request || "No request text body logged."}
+              {(userRole === 'analyst' || userRole === 'admin') && (
+                <div>
+                  <span className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">// Email/Portal Request:</span>
+                  <div className="bg-background border border-border p-4 rounded-xl text-foreground font-medium leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
+                    {selectedLog.email_request || "No request text body logged."}
+                  </div>
                 </div>
-              </div>
+              )}
               
               <div>
                 <span className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">// AI Response Output:</span>
@@ -1647,6 +1679,9 @@ export default function UserDashboard() {
                   placeholder="e.g. vessel@shipname.com"
                   className="w-full px-3 py-2 border border-border focus:border-gold bg-[#FAF9F6] rounded-xl text-xs outline-none text-foreground transition font-medium"
                 />
+                <span className="block text-[9px] text-zinc-500 mt-1 font-semibold">
+                  ⚠️ Note: You can only edit your Interaction Email once every 15 days to prevent account sharing.
+                </span>
               </div>
 
               <div className="border-t border-border/60 pt-3">
@@ -1964,7 +1999,7 @@ export default function UserDashboard() {
               <div>
                 <h4 className="font-black text-sm text-[#1b1b1b] mb-1.5 uppercase tracking-wide">Email Target &amp; Identification</h4>
                 <p className="text-zinc-600 font-medium">
-                  Send emails to **hello@logmark-ai.com** from either your registered primary login email or the dedicated **Interaction Email** configured in your workspace settings.
+                  Send emails to **mate@logmark-ai.com** from either your registered primary login email or the dedicated **Interaction Email** configured in your workspace settings.
                 </p>
               </div>
 

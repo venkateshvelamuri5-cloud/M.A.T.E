@@ -46,11 +46,8 @@ export default function LandingPage() {
             <a href="#roadmap" className="hover:text-foreground transition">Roadmap</a>
           </nav>
           <div className="flex items-center gap-4">
-            <Link href="/analyst" className="text-xs text-muted-foreground hover:text-foreground transition font-bold uppercase tracking-wider">
-              Analyst
-            </Link>
-            <Link href="/signup" className="inline-flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition shadow-sm">
-              Get Access <ArrowRight className="h-4 w-4" />
+            <Link href="/login" className="inline-flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-5 py-2 text-sm font-semibold hover:bg-primary/90 transition shadow-sm hover:scale-[1.02] transform duration-150">
+              Sign In
             </Link>
           </div>
         </div>
@@ -224,7 +221,7 @@ export default function LandingPage() {
               </div>
               <div className="p-4 space-y-3.5">
                 <div>
-                  <span className="text-gold font-bold">To:</span> <span className="text-deep font-bold">hello@logmark-ai.com</span>
+                  <span className="text-gold font-bold">To:</span> <span className="text-deep font-bold">mate@logmark-ai.com</span>
                 </div>
                 <div className="border-b border-border/60 pb-2">
                   <span className="text-gold font-bold">Subject:</span> <span className="text-deep font-bold">Risk Assessment</span>
@@ -250,7 +247,7 @@ export default function LandingPage() {
             <div className="mt-4 bg-white rounded-xl border border-border p-4 shadow-sm font-mono text-[10px] text-zinc-700 leading-relaxed max-h-40 overflow-y-auto">
               <div className="text-green-600 font-bold mb-1 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block animate-ping" />
-                From: hello@logmark-ai.com
+                From: mate@logmark-ai.com
               </div>
               <pre className="whitespace-pre-line text-zinc-600 mt-2 font-mono">
                 {`Vessel: M/V PIONEER\nRank: Chief Mate\n\n[RISK ASSESSMENT SHEET]\nActivity: Hot work in pump room — bilge area, vessel underway.\n\nHazards: Explosive atmospheres, slips/falls, limited evacuation path.\nControls: Gas-free checks, fire watch, bilge drainage, emergency rescue line ready.\nResidual Rating: Low (Acceptable with Master approval).`}

@@ -864,7 +864,7 @@ export default function AnalystPortal() {
                 required
                 value={emailInput}
                 onChange={e => setEmailInput(e.target.value)}
-                placeholder="hello@logmark-ai.com"
+                placeholder="mate@logmark-ai.com"
                 className="w-full px-3.5 py-2.5 border border-border focus:border-[#575ECF] bg-background rounded-lg text-xs outline-none text-foreground transition font-medium"
               />
             </div>

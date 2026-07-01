@@ -632,9 +632,24 @@ export default function ModulePage({ params }: { params: { slot_code: string } }
     }
   };
 
-  const handleDownloadInstructions = () => {
+  const handleDownloadInstructions = async () => {
     if (activeSlot) {
-      const content = `AGENT: ${activeSlot.code} - ${activeSlot.name}\nCATEGORY: ${activeSlot.category}\n\n=== DIRECT EMAIL INSTRUCTIONS ===\nTo run this agent via email, send a message to hello@logmark-ai.com with the following subject/format:\n\nEmail Example Subject/Body Requirement:\n"${activeSlot.emailExample}"\n\n=== GENERAL INSTRUCTIONS ===\n1. Ensure your officer profile details are fully updated in the dashboard settings.\n2. The system automatically grounds responses using your uploaded ship certificates, SMS documents, and checklists.\n`;
+      let manualText = '';
+      try {
+        const { data } = await supabase
+          .from('system_settings')
+          .select('value')
+          .eq('key', 'user_manual')
+          .maybeSingle();
+        if (data?.value) {
+          manualText = data.value;
+        }
+      } catch (err) {
+        console.warn('Failed to fetch user manual for download:', err);
+      }
+
+      const content = `AGENT: ${activeSlot.code} - ${activeSlot.name}\nCATEGORY: ${activeSlot.category}\n\n=== DIRECT EMAIL INSTRUCTIONS ===\nTo run this agent via email, send a message to mate@logmark-ai.com with the following subject/format:\n\nEmail Example Subject/Body Requirement:\n"${activeSlot.emailExample}"\n\n=== GENERAL INSTRUCTIONS ===\n1. Ensure your officer profile details are fully updated in the dashboard settings.\n2. The system automatically grounds responses using your uploaded ship certificates, SMS documents, and checklists.\n\n====================================================\nM.A.T.E. USER MANUAL & GUIDELINES\n====================================================\n\n${manualText || 'No additional user manual content found in settings.'}`;
+      
       const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');

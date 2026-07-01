@@ -314,7 +314,7 @@ export async function POST(req: NextRequest) {
         const { data: userFiles, error: userFilesErr } = await supabase
           .from('user_files')
           .select('storage_path, name, file_type, user_id, agent_id')
-          .eq('user_id', userId);
+          .or(`user_id.eq.${userId},file_type.eq.knowledge_base`);
 
         if (userFilesErr) {
           console.warn('Failed to query user files from database:', userFilesErr.message);
@@ -341,7 +341,7 @@ export async function POST(req: NextRequest) {
           FileProcessor.resetCache();
           for (const fileRef of filesToDownload) {
             // Determine storage bucket: user space vs knowledge base
-            const bucketName = (fileRef.agent_id || fileRef.user_id === '00000000-0000-0000-0000-000000000000')
+            const bucketName = (fileRef.agent_id || fileRef.user_id === '00000000-0000-0000-0000-000000000000' || fileRef.file_type === 'knowledge_base')
               ? 'knowledge-base'
               : 'user-spaces';
 
@@ -410,8 +410,8 @@ Mariner Profile:
 `;
 
       processedResult = await gemini.runGroundedQuery(
-        promptQuery, 
-        `${marinerProfilePrompt}\n\n${scrubbedText}\n\n${fileReferenceContext}`,
+        scrubbedText, 
+        `${marinerProfilePrompt}\n\n${fileReferenceContext}`,
         pdfAttachments,
         selectedAgentPrompt
       );

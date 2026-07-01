@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../src/supabase-client';
-import { Anchor, ArrowLeft, Mail, Lock, LogIn } from 'lucide-react';
+import { ArrowLeft, Mail, Lock, LogIn } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();

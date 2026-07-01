@@ -138,9 +138,13 @@ export async function POST(req: NextRequest) {
 
       if (files && files.length > 0) {
         for (const file of files) {
-          const { data: fileBlob } = await supabase.storage
-             .from('user-spaces')
-             .download(file.storage_path);
+           const bucketName = (file.agent_id || file.user_id === '00000000-0000-0000-0000-000000000000' || file.file_type === 'knowledge_base')
+             ? 'knowledge-base'
+             : 'user-spaces';
+
+           const { data: fileBlob } = await supabase.storage
+              .from(bucketName)
+              .download(file.storage_path);
 
           if (fileBlob) {
             const fileExt = (file.file_type || '').toLowerCase();
