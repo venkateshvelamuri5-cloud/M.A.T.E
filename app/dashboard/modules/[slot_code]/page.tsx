@@ -648,7 +648,50 @@ export default function ModulePage({ params }: { params: { slot_code: string } }
         console.warn('Failed to fetch user manual for download:', err);
       }
 
-      const content = `AGENT: ${activeSlot.code} - ${activeSlot.name}\nCATEGORY: ${activeSlot.category}\n\n=== DIRECT EMAIL INSTRUCTIONS ===\nTo run this agent via email, send a message to mate@logmark-ai.com with the following subject/format:\n\nEmail Example Subject/Body Requirement:\n"${activeSlot.emailExample}"\n\n=== GENERAL INSTRUCTIONS ===\n1. Ensure your officer profile details are fully updated in the dashboard settings.\n2. The system automatically grounds responses using your uploaded ship certificates, SMS documents, and checklists.\n\n====================================================\nM.A.T.E. USER MANUAL & GUIDELINES\n====================================================\n\n${manualText || 'No additional user manual content found in settings.'}`;
+      const content = `AGENT: ${activeSlot.code} - ${activeSlot.name}
+CATEGORY: ${activeSlot.category}
+
+(A1) RISK ASSESSMENT
+
+The email sent out can be formatted or plain text. Plain text option is preferred to minimize the outbound email data packet size.
+
+----------------------------------------------------
+HOW TO :-
+TO : hello@logmark-ai.com
+SUBJECT : Enter the name of the module you want to query. Please ensure that you use one of the following: "RA", "RISK ASSESSMENT", "SAFETY ASSESSMENT", or "RISK ANALYSIS". Please note that the MATE ‘may not’ reliably process or recognize keywords outside of this list.
+BODY : Insert a one liner query to the risk assessment module.
+
+In a separate paragraph, spaced by a line, put in list of items you want the AI to mandatorily include in your risk assessment output.
+
+ATTACHMENT : Any PDF relevant to the RA being generated can be added as an attachment; example – mail from office requiring points to be included in RA, extract of company manual or any other document that as relevant information that you want included in the risk assessment generated.
+
+Note that; additional text after the RA request and attachment addition are optional.
+
+!! Greater the detail mentioned in the requirement, the better will the output”
+For example :- A query “Make RA for ‘midship crane not operating prior coming to port’” will give a poor result compared to ‘Midship crane non-operational as required by terminal requirement prior vessel coming into terminal for loading operation’
+----------------------------------------------------
+
+----------------------------------------------------
+EXAMPLE :-
+TO : hello@logmark-ai.com
+
+SUBJECT : Risk Assessment
+
+BODY : 
+Make a RA for X-band RADAR not working.
+
+Inform flag and class, obtain dispensation
+
+ATTACHMENT : eMail.pdf “(mail from office requesting RA to be made and points to be included)” 
+----------------------------------------------------
+
+## Note :- Pls read the workflow at the bottom of this document on how MATE generated the required response.
+
+====================================================
+M.A.T.E. USER MANUAL & GUIDELINES
+====================================================
+
+${manualText || 'No additional user manual content found in settings.'}`
       
       const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
