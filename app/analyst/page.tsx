@@ -323,10 +323,16 @@ export default function AnalystPortal() {
   // Agent Management states
   const [agents, setAgents] = useState<Agent[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
   const [showLogs, setShowLogs] = useState(false);
+
   const [filterStatus, setFilterStatus] = useState('All');
   const [filterSlot, setFilterSlot] = useState('All');
   const [filterKeyword, setFilterKeyword] = useState('');
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterStatus, filterSlot, filterKeyword]);
 
   // Wizard States
   const [selectedSlotCode, setSelectedSlotCode] = useState<string | null>(null);
@@ -379,8 +385,9 @@ export default function AnalystPortal() {
 
       const { data: logs } = await supabase
         .from('interactions_log')
-        .select('id, created_at, subject, status, error_message, profiles(email), agents(name)')
-        .order('created_at', { ascending: false });
+        .select('id, created_at, subject, status, error_message, input_tokens, output_tokens, run_cost, routing_layer, profiles(email), agents(name)')
+        .order('created_at', { ascending: false })
+        .limit(100);
       if (logs) {
         setActivityLogs(logs as any[]);
       }
@@ -833,6 +840,13 @@ export default function AnalystPortal() {
     return true;
   });
 
+  const itemsPerPage = 10;
+  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage) || 1;
+  const displayedLogs = filteredLogs.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
   if (!isLoggedIn || !isAnalyst) {
     return (
       <div className="min-h-screen bg-background text-foreground flex flex-col justify-center items-center font-sans p-6 relative">
@@ -1107,14 +1121,14 @@ export default function AnalystPortal() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredLogs.length === 0 ? (
+                  {displayedLogs.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="py-8 text-center text-zinc-450 italic font-medium">
                         No activity logs match your filter criteria.
                       </td>
                     </tr>
                   ) : (
-                    filteredLogs.map((log) => (
+                    displayedLogs.map((log) => (
                       <tr key={log.id} className="border-b border-zinc-100 hover:bg-zinc-50/50 transition">
                         <td className="py-3 px-4 text-muted-foreground font-mono text-[10px] whitespace-nowrap">
                           {new Date(log.created_at).toISOString().replace('T', ' ').substring(0, 19)}
@@ -1175,6 +1189,36 @@ export default function AnalystPortal() {
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination Controls */}
+            {filteredLogs.length > itemsPerPage && (
+              <div className="mt-4 pt-4 border-t border-zinc-100 flex items-center justify-between text-xs">
+                <div className="text-zinc-500 font-medium">
+                  Showing <span className="font-bold">{Math.min(filteredLogs.length, (currentPage - 1) * itemsPerPage + 1)}</span> to{' '}
+                  <span className="font-bold">{Math.min(filteredLogs.length, currentPage * itemsPerPage)}</span> of{' '}
+                  <span className="font-bold">{filteredLogs.length}</span> logs (top 100 max)
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    className="px-3 py-1.5 rounded-lg border border-border bg-white hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed font-bold transition text-[#1b1b1b]"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-zinc-650 font-bold px-2">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <button
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    className="px-3 py-1.5 rounded-lg border border-border bg-white hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed font-bold transition text-[#1b1b1b]"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

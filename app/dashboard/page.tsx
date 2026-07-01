@@ -1066,7 +1066,7 @@ export default function UserDashboard() {
 
   // Render Category Block
   const renderCategoryCard = (categoryName: string) => {
-    const slots = dynamicSlots.filter(s => s.category === categoryName && s.name && s.deployed);
+    const slots = dynamicSlots.filter(s => s.category === categoryName && s.name);
     if (slots.length === 0) return null;
     return (
       <div key={categoryName} className="bg-white border-2 border-[#1b1b1b] rounded-xl overflow-hidden shadow-[3px_3px_0px_0px_#1b1b1b] flex flex-col">
@@ -1082,17 +1082,24 @@ export default function UserDashboard() {
                   router.push(`/dashboard/modules/${slot.code}`);
                 }
               }}
-              className={`px-4 py-3 text-xs font-bold flex items-center gap-3 transition min-h-[42px] ${
+              className={`px-4 py-3 text-xs font-bold flex items-center justify-between transition min-h-[42px] ${
                 slot.deployed && !(slot as any).is_locked
                   ? 'hover:bg-indigo-50/60 cursor-pointer text-[#1b1b1b]' 
-                  : 'text-zinc-400 bg-zinc-50/50 cursor-not-allowed text-zinc-400'
+                  : 'text-zinc-400 bg-zinc-50/50 cursor-not-allowed'
               }`}
             >
-              <span className="font-bold text-[#575ECF]">{slot.code}</span>
-              <span>{slot.name}</span>
-              {(slot as any).is_locked && (
-                <Lock className="w-3.5 h-3.5 text-red-500 ml-auto shrink-0 animate-pulse" />
-              )}
+              <div className="flex items-center gap-3">
+                <span className="font-bold text-[#575ECF]">{slot.code}</span>
+                <span>{slot.name}</span>
+              </div>
+              
+              {!slot.deployed ? (
+                <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 uppercase tracking-wide">
+                  Work in Progress
+                </span>
+              ) : (slot as any).is_locked ? (
+                <Lock className="w-3.5 h-3.5 text-red-500 shrink-0 animate-pulse" />
+              ) : null}
             </div>
           ))}
         </div>
