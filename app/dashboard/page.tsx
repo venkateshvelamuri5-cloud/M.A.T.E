@@ -741,7 +741,7 @@ export default function UserDashboard() {
       const { data: files } = await supabase
         .from('user_files')
         .select('*')
-        .or(`user_id.eq.${uid},file_type.eq.knowledge_base`);
+        .eq('user_id', uid);
 
       if (files) {
         setUploadedFiles(files);
