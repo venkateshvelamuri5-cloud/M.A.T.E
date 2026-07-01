@@ -1012,6 +1012,38 @@ export default function UserDashboard() {
     }
   };
 
+  const handleDeleteFile = async (file: UploadedFile) => {
+    if (!confirm(`Are you sure you want to delete "${file.name}"?`)) return;
+    setStatusMsg(`Deleting "${file.name}"...`);
+    try {
+      // 1. Delete from Supabase Storage
+      const { error: storageErr } = await supabase.storage
+        .from('user-spaces')
+        .remove([file.storage_path]);
+      if (storageErr) {
+        console.warn("Storage deletion warning:", storageErr.message);
+      }
+
+      // 2. Delete from database table user_files
+      const { error: dbErr } = await supabase
+        .from('user_files')
+        .delete()
+        .eq('id', file.id);
+
+      if (dbErr) throw dbErr;
+
+      setStatusMsg(`File "${file.name}" deleted successfully.`);
+      setUploadedFiles(prev => prev.filter(f => f.id !== file.id));
+      
+      setTimeout(() => {
+        setStatusMsg(null);
+      }, 4000);
+    } catch (err) {
+      console.error("Delete failed:", err);
+      setStatusMsg(`Delete failed: ${(err as Error).message}`);
+    }
+  };
+
   const handleCopyTemplate = (templateBody: string, taskName: string) => {
     navigator.clipboard.writeText(templateBody);
     setStatusMsg(`Copied template for "${taskName}" to your clipboard!`);
@@ -1443,10 +1475,17 @@ export default function UserDashboard() {
               <div className="mt-4 border-t border-zinc-100 pt-4 space-y-2 max-h-40 overflow-y-auto">
                 {uploadedFiles.map(file => (
                   <div key={file.id} className="flex justify-between items-center text-[10px] text-zinc-600 bg-zinc-50 p-2 rounded">
-                    <span className="truncate max-w-[150px] font-semibold">{file.name}</span>
-                    <button onClick={() => triggerDownload(file)} className="text-[#575ECF] hover:underline font-bold">
-                      Download
-                    </button>
+                    <span className="truncate max-w-[140px] font-semibold" title={file.name}>{file.name}</span>
+                    <div className="flex items-center gap-2.5">
+                      <button onClick={() => triggerDownload(file)} className="text-[#575ECF] hover:underline font-bold">
+                        Download
+                      </button>
+                      {file.file_type !== 'knowledge_base' && (
+                        <button onClick={() => handleDeleteFile(file)} className="text-red-600 hover:underline font-bold">
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
