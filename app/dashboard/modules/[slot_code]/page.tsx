@@ -351,11 +351,11 @@ export default function ModulePage({ params }: { params: { slot_code: string } }
         setMaxInteractions(limits.max_interactions);
       }
 
-      // 2. Fetch Uploaded Files (both user workspace and Global KB files)
+      // 2. Fetch Uploaded Files (only user workspace files)
       const { data: files } = await supabase
         .from('user_files')
         .select('*')
-        .or(`user_id.eq.${uid},file_type.eq.knowledge_base`);
+        .eq('user_id', uid);
 
       if (files) {
         setUploadedFiles(files);

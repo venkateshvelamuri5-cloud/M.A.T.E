@@ -129,15 +129,24 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    let files: any[] = [];
+    const queryParts: string[] = [];
     if (targetFileIds && targetFileIds.length > 0) {
-      const { data: files } = await supabase
-        .from('user_files')
-        .select('*')
-        .in('id', targetFileIds)
-        .or(`user_id.eq.${userId},file_type.eq.knowledge_base`);
+      queryParts.push(`and(id.in.(${targetFileIds.join(',')}),user_id.eq.${userId})`);
+    }
+    queryParts.push('file_type.eq.knowledge_base');
 
-      if (files && files.length > 0) {
-        for (const file of files) {
+    const { data: fetchedFiles } = await supabase
+      .from('user_files')
+      .select('*')
+      .or(queryParts.join(','));
+
+    if (fetchedFiles) {
+      files = fetchedFiles;
+    }
+
+    if (files && files.length > 0) {
+      for (const file of files) {
            const bucketName = (file.agent_id || file.user_id === '00000000-0000-0000-0000-000000000000' || file.file_type === 'knowledge_base')
              ? 'knowledge-base'
              : 'user-spaces';
@@ -186,7 +195,6 @@ export async function POST(req: NextRequest) {
           }
         }
       }
-    }
 
     // 5. Ingest profile metadata directly into grounding prompt to personalize output
     const marinerProfilePrompt = `

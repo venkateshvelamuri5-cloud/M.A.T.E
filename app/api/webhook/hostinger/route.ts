@@ -310,14 +310,14 @@ export async function POST(req: NextRequest) {
         // Collect files to download (both user's private files and agent specialized knowledge files)
         const filesToDownload: any[] = [];
 
-        // 1. Get user files from user_files
+        // 1. Get global knowledge base files (analyst-uploaded reference materials)
         const { data: userFiles, error: userFilesErr } = await supabase
           .from('user_files')
           .select('storage_path, name, file_type, user_id, agent_id')
-          .or(`user_id.eq.${userId},file_type.eq.knowledge_base`);
+          .eq('file_type', 'knowledge_base');
 
         if (userFilesErr) {
-          console.warn('Failed to query user files from database:', userFilesErr.message);
+          console.warn('Failed to query knowledge base files from database:', userFilesErr.message);
         } else if (userFiles) {
           filesToDownload.push(...userFiles);
         }
