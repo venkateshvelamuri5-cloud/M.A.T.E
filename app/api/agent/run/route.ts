@@ -172,13 +172,15 @@ export async function POST(req: NextRequest) {
               }
             }
 
-            // Strategy 2: Check if file is relevant based on keyword match
+            // Knowledge base files (analyst-uploaded company manuals) are ALWAYS included.
+            // Keyword filtering only applies to the user's own workspace files.
+            const isKnowledgeBase = file.file_type === 'knowledge_base';
             const isExplicitSelection = selectedFileIds !== undefined;
             const matchesKeywords = keywords.length === 0 || keywords.some(kw => 
               file.name.toLowerCase().includes(kw) || fileTextContent.toLowerCase().includes(kw)
             );
 
-            if (isExplicitSelection || matchesKeywords) {
+            if (isKnowledgeBase || isExplicitSelection || matchesKeywords) {
               if (fileExt === 'pdf') {
                 const arrayBuffer = await fileBlob.arrayBuffer();
                 pdfAttachments.push({
