@@ -70,12 +70,33 @@ export class GeminiService {
     systemPrompt?: string
   ): Promise<string> {
     try {
-      const activePrompt = systemPrompt || 'You are an agentic maritime representative. Answer the query using the reference maritime data below. If the answer cannot be found in the context, look it up online using Google Search.';
-      const parts: any[] = [
-        {
-          text: `${activePrompt}\n\nContext:\n${referenceContext}\n\nQuery:\n${query}`
-        }
-      ];
+      const activeSystemPrompt = systemPrompt || 
+        'You are an agentic maritime representative. Answer the query using the reference maritime data provided. If the answer cannot be found in the context, look it up online using Google Search.';
+
+      // Build a clearly structured user message that explicitly directs the AI
+      // on how to prioritize vessel settings and uploaded company documents
+      const userMessage = `
+=== MANDATORY GROUNDING CONTEXT (READ AND APPLY BEFORE RESPONDING) ===
+
+${referenceContext}
+
+=== END OF GROUNDING CONTEXT ===
+
+INSTRUCTIONS FOR USING THE ABOVE CONTEXT:
+1. VESSEL SETTINGS: The "Vessel Particulars & Systems" and "Mariner Profile" sections above define this user's specific vessel configuration. You MUST tailor your entire response to this vessel. Do NOT reference equipment, systems, or cargo types that are marked as not applicable (e.g., if Bow Thruster is "Not fitted", do not mention bow thruster operations).
+
+2. COMPANY MANUALS / UPLOADED DOCUMENTS: If any documents are listed above under "--- Document: [filename] ---", treat them as the PRIMARY reference and FORMAT AUTHORITY.
+   - If a document contains a template or structured format, FOLLOW THAT FORMAT for your response.
+   - If a document contains company-specific procedures, CITE them in your response using the document name and relevant section/requirement.
+   - If no document is present, use the format defined in your system directive.
+
+3. PRIORITY ORDER: Company Manual > Vessel Settings > Your General Maritime Knowledge.
+
+=== USER QUERY ===
+${query}
+`.trim();
+
+      const parts: any[] = [{ text: userMessage }];
 
       // Add PDF files directly as inlineData contents
       for (const pdf of pdfAttachments) {
@@ -96,6 +117,7 @@ export class GeminiService {
           }
         ],
         config: {
+          systemInstruction: activeSystemPrompt,
           tools: [{ googleSearch: {} }]
         }
       });
@@ -106,6 +128,7 @@ export class GeminiService {
       throw new Error(`Failed to process query with Gemini grounding: ${(error as Error).message}`);
     }
   }
+
 
   /**
    * Layer 2 — Fuzzy keyword match against analyst-defined agent keywords.
