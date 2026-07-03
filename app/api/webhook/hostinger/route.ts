@@ -482,14 +482,22 @@ Mariner Profile:
       }
     }
 
+    // Build professional addressed email body
+    const senderRank = profile?.rank || 'Officer';
+    const senderName = profile?.full_name || from;
+    const vesselName = profile?.vessel_name ? `MV ${profile.vessel_name}` : 'your vessel';
+    const queryRef = subject ? `your request: "${subject}"` : 'your maritime inquiry';
+
+    const plainTextBody = `Dear ${senderRank} ${senderName},\n\nThank you for your query via M.A.T.E. Please find below the generated response to ${queryRef}.\n\n---\n\n${processedResult}\n\n---\n\nThis response has been generated and tailored specifically for ${vesselName}. Please review all safety-critical parameters against your vessel's SMS and statutory requirements before execution.\n\nShould you require any clarification or a revised assessment, please do not hesitate to re-submit your query.\n\nBest regards,\nM.A.T.E — Maritime Automated Technical Executive\nLogmark Marine Systems`;
+
     // Format output spacing and markup structure to styled HTML
-    const formattedHtml = wrapInEmailTemplate(formatMarkdownToHtml(processedResult));
+    const formattedHtml = wrapInEmailTemplate(formatMarkdownToHtml(processedResult), senderRank, senderName, vesselName, queryRef);
 
     // 6. Send Outbound SMTP Email response back
     const mailResponse = await smtp.sendMail({
       to: from,
       subject: `Re: ${subject}`,
-      text: `Hello,\n\nHere is the requested information:\n\n${processedResult}\n\nThank you for using M.A.T.E.`,
+      text: plainTextBody,
       html: formattedHtml,
       attachments: emailAttachments
     });
@@ -639,19 +647,39 @@ function formatMarkdownToHtml(markdown: string): string {
   return formattedParagraphs.join('\n');
 }
 
-function wrapInEmailTemplate(formattedBody: string): string {
+
+function wrapInEmailTemplate(formattedBody: string, rank?: string, name?: string, vesselName?: string, queryRef?: string): string {
+  const greeting = rank && name 
+    ? `Dear ${rank} ${name},` 
+    : 'Dear Officer,';
+  const queryLine = queryRef 
+    ? `<p style="font-size: 13px; color: #444; margin: 0 0 20px 0;">Thank you for your query via M.A.T.E. Please find below the generated response to <strong>${queryRef}</strong>.</p>`
+    : `<p style="font-size: 13px; color: #444; margin: 0 0 20px 0;">Thank you for your query via M.A.T.E. Please find below the generated response.</p>`;
+  const closing = vesselName 
+    ? `<p style="font-size: 12px; color: #555; margin: 24px 0 0 0;">This response has been tailored specifically for <strong>${vesselName}</strong>. Please review all safety-critical parameters against your vessel's SMS and statutory requirements before execution.</p>`
+    : '';
+
   return `
 <div style="background-color: #FCFBF8; font-family: 'Inter', -apple-system, sans-serif; color: #1c2024; padding: 32px 24px; max-width: 600px; margin: 0 auto; border: 1px solid #dcdad5; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
   <div style="border-bottom: 1px solid #dcdad5; padding-bottom: 16px; margin-bottom: 24px;">
     <h2 style="font-family: 'Fraunces', Georgia, serif; color: #0a1826; font-size: 20px; font-weight: bold; margin: 0;">M.A.T.E Workspace</h2>
     <span style="font-size: 9px; text-transform: uppercase; letter-spacing: 0.15em; color: #8c8c88; font-weight: bold; display: block; margin-top: 4px;">Maritime Automated Technical Executive</span>
   </div>
-  <div style="line-height: 1.6;">
+  <p style="font-size: 14px; font-weight: 600; color: #1c2024; margin: 0 0 8px 0;">${greeting}</p>
+  ${queryLine}
+  <div style="line-height: 1.6; border-top: 1px solid #eee; padding-top: 20px;">
     ${formattedBody}
   </div>
-  <div style="border-top: 1px solid #dcdad5; padding-top: 16px; margin-top: 32px; font-size: 10px; color: #8c8c88; text-align: center; font-weight: 500;">
+  ${closing}
+  <div style="border-top: 1px solid #dcdad5; padding-top: 16px; margin-top: 32px; font-size: 11px; color: #555; font-weight: 500;">
+    <p style="margin: 0 0 4px 0;">Best regards,</p>
+    <p style="margin: 0; font-weight: 700; color: #1c2024;">M.A.T.E — Maritime Automated Technical Executive</p>
+    <p style="margin: 2px 0 0 0; color: #8c8c88;">Logmark Marine Systems</p>
+  </div>
+  <div style="border-top: 1px solid #dcdad5; padding-top: 12px; margin-top: 16px; font-size: 10px; color: #8c8c88; text-align: center; font-weight: 500;">
     © 2026 M.A.T.E. Merchant Navy Automation Systems. All rights reserved.
   </div>
 </div>
   `;
 }
+
