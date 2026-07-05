@@ -187,6 +187,7 @@ export async function POST(req: NextRequest) {
                   data: Buffer.from(arrayBuffer),
                   mimeType: 'application/pdf'
                 });
+                fileReferenceContext += `\n\n--- Document: ${file.name} (Attached PDF) ---\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n`;
               } else {
                 const cleanedText = FileProcessor.cleanToMarkdown(fileTextContent, file.name);
                 if (cleanedText) {
