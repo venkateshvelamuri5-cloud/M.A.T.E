@@ -9,10 +9,10 @@ const supabaseUrl =
 
 // For browser calls (Auth/Uploads), we use the Anon Public key.
 // For serverless functions (handling SMTP/Gemini), we use the Service Role key.
-const supabaseKey = 
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
-  process.env.SUPABASE_SERVICE_ROLE_KEY || 
-  'placeholder-key';
+const isBrowser = typeof window !== 'undefined';
+const supabaseKey = isBrowser
+  ? (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key')
+  : (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key');
 
 export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
