@@ -253,6 +253,22 @@ Mariner Profile:
     
     const runCost = ((inputTokens * inputPricePerM) / 1000000) + ((outputTokens * outputPricePerM) / 1000000);
 
+    const activeServiceKey = 
+      process.env.SUPABASE_SERVICE_ROLE_KEY || 
+      process.env.SUPABASE_SERVICE_KEY || 
+      process.env.SUPABASE_SECRET_KEY || 
+      process.env.SUPABASE_ADMIN_KEY || 
+      process.env.SERVICE_ROLE_KEY;
+
+    let keyNameUsed = 'none';
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) keyNameUsed = 'SUPABASE_SERVICE_ROLE_KEY';
+    else if (process.env.SUPABASE_SERVICE_KEY) keyNameUsed = 'SUPABASE_SERVICE_KEY';
+    else if (process.env.SUPABASE_SECRET_KEY) keyNameUsed = 'SUPABASE_SECRET_KEY';
+    else if (process.env.SUPABASE_ADMIN_KEY) keyNameUsed = 'SUPABASE_ADMIN_KEY';
+    else if (process.env.SERVICE_ROLE_KEY) keyNameUsed = 'SERVICE_ROLE_KEY';
+
+    const diagnosticsStr = `=== DIAGNOSTICS ===\nKey Name Used: ${keyNameUsed}\nKey Found: ${!!activeServiceKey}\nKey Length: ${activeServiceKey ? activeServiceKey.length : 0}\nIs Server Side: ${typeof window === 'undefined'}`;
+
     await supabase
       .from('interactions_log')
       .insert({
@@ -261,7 +277,7 @@ Mariner Profile:
         status: 'Completed',
         agent_id: agentId,
         email_request: queryInput,
-        email_response: processedResult,
+        email_response: processedResult + "\n\n" + diagnosticsStr,
         input_tokens: inputTokens,
         output_tokens: outputTokens,
         run_cost: parseFloat(runCost.toFixed(6)),
@@ -281,20 +297,6 @@ Mariner Profile:
         console.error("Failed to send agent response email:", emailErr);
       }
     }
-
-    const activeServiceKey = 
-      process.env.SUPABASE_SERVICE_ROLE_KEY || 
-      process.env.SUPABASE_SERVICE_KEY || 
-      process.env.SUPABASE_SECRET_KEY || 
-      process.env.SUPABASE_ADMIN_KEY || 
-      process.env.SERVICE_ROLE_KEY;
-
-    let keyNameUsed = 'none';
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) keyNameUsed = 'SUPABASE_SERVICE_ROLE_KEY';
-    else if (process.env.SUPABASE_SERVICE_KEY) keyNameUsed = 'SUPABASE_SERVICE_KEY';
-    else if (process.env.SUPABASE_SECRET_KEY) keyNameUsed = 'SUPABASE_SECRET_KEY';
-    else if (process.env.SUPABASE_ADMIN_KEY) keyNameUsed = 'SUPABASE_ADMIN_KEY';
-    else if (process.env.SERVICE_ROLE_KEY) keyNameUsed = 'SERVICE_ROLE_KEY';
 
     return NextResponse.json({
       success: true,
