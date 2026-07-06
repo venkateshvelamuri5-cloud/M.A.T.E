@@ -282,13 +282,28 @@ Mariner Profile:
       }
     }
 
+    const activeServiceKey = 
+      process.env.SUPABASE_SERVICE_ROLE_KEY || 
+      process.env.SUPABASE_SERVICE_KEY || 
+      process.env.SUPABASE_SECRET_KEY || 
+      process.env.SUPABASE_ADMIN_KEY || 
+      process.env.SERVICE_ROLE_KEY;
+
+    let keyNameUsed = 'none';
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) keyNameUsed = 'SUPABASE_SERVICE_ROLE_KEY';
+    else if (process.env.SUPABASE_SERVICE_KEY) keyNameUsed = 'SUPABASE_SERVICE_KEY';
+    else if (process.env.SUPABASE_SECRET_KEY) keyNameUsed = 'SUPABASE_SECRET_KEY';
+    else if (process.env.SUPABASE_ADMIN_KEY) keyNameUsed = 'SUPABASE_ADMIN_KEY';
+    else if (process.env.SERVICE_ROLE_KEY) keyNameUsed = 'SERVICE_ROLE_KEY';
+
     return NextResponse.json({
       success: true,
       result: processedResult,
       interactionsLimit: `${limitCount + 1} / ${limitMax}`,
       _diagnostics: {
-        hasServiceRoleKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-        serviceRoleKeyLength: process.env.SUPABASE_SERVICE_ROLE_KEY ? process.env.SUPABASE_SERVICE_ROLE_KEY.length : 0,
+        hasServiceRoleKey: !!activeServiceKey,
+        serviceRoleKeyLength: activeServiceKey ? activeServiceKey.length : 0,
+        keyNameUsed,
         isServerSide: typeof window === 'undefined'
       }
     });
