@@ -151,12 +151,15 @@ export async function POST(req: NextRequest) {
              ? 'knowledge-base'
              : 'user-spaces';
 
-           const fileBlob = await supabase.storage
+           const { data: fileBlob, error: downloadErr } = await supabase.storage
               .from(bucketName)
-              .download(file.storage_path)
-              .then(res => res.data);
+              .download(file.storage_path);
 
-          if (fileBlob) {
+           if (downloadErr) {
+             console.error(`[STORAGE DOWNLOAD ERROR] Failed to download "${file.name}" from bucket "${bucketName}":`, downloadErr.message || downloadErr);
+           }
+
+           if (fileBlob) {
             let fileExt = (file.file_type || '').toLowerCase();
             if (fileExt === 'knowledge_base' && file.name.includes('.')) {
               fileExt = file.name.substring(file.name.lastIndexOf('.') + 1).toLowerCase();
