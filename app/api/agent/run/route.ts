@@ -285,7 +285,12 @@ Mariner Profile:
     return NextResponse.json({
       success: true,
       result: processedResult,
-      interactionsLimit: `${limitCount + 1} / ${limitMax}`
+      interactionsLimit: `${limitCount + 1} / ${limitMax}`,
+      _diagnostics: {
+        hasServiceRoleKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+        serviceRoleKeyLength: process.env.SUPABASE_SERVICE_ROLE_KEY ? process.env.SUPABASE_SERVICE_ROLE_KEY.length : 0,
+        isServerSide: typeof window === 'undefined'
+      }
     });
 
   } catch (error) {
