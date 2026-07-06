@@ -355,7 +355,10 @@ export async function POST(req: NextRequest) {
               continue;
             }
 
-            const fileExt = (fileRef.file_type || '').toLowerCase();
+            let fileExt = (fileRef.file_type || '').toLowerCase();
+            if (fileExt === 'knowledge_base' && fileRef.name.includes('.')) {
+              fileExt = fileRef.name.substring(fileRef.name.lastIndexOf('.') + 1).toLowerCase();
+            }
             let fileTextContent = '';
             if (fileExt === 'txt' || fileExt === 'md') {
               fileTextContent = await fileBlob.text();

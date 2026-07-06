@@ -151,12 +151,16 @@ export async function POST(req: NextRequest) {
              ? 'knowledge-base'
              : 'user-spaces';
 
-           const { data: fileBlob } = await supabase.storage
+           const fileBlob = await supabase.storage
               .from(bucketName)
-              .download(file.storage_path);
+              .download(file.storage_path)
+              .then(res => res.data);
 
           if (fileBlob) {
-            const fileExt = (file.file_type || '').toLowerCase();
+            let fileExt = (file.file_type || '').toLowerCase();
+            if (fileExt === 'knowledge_base' && file.name.includes('.')) {
+              fileExt = file.name.substring(file.name.lastIndexOf('.') + 1).toLowerCase();
+            }
             let fileTextContent = '';
             
             if (fileExt === 'txt' || fileExt === 'md' || fileExt === 'rtf') {
