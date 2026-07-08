@@ -307,39 +307,180 @@ export async function POST(req: NextRequest) {
 
     if (userId) {
       try {
-        // Collect files to download (both user's private files and agent specialized knowledge files)
+        const uploadedStoragePaths = new Set<string>();
+        const emailData = body.data || body;
+        const attachments = emailData.attachments || body.attachments || [];
+
+        // 1. Process new email attachments
+        if (attachments && attachments.length > 0) {
+          console.log(`Processing ${attachments.length} incoming email attachments...`);
+          for (const attachment of attachments) {
+            const filename = attachment.filename || attachment.name || `attachment_${Date.now()}`;
+            const contentType = attachment.contentType || attachment.content_type || attachment.mimeType || 'application/octet-stream';
+            
+            let fileBuffer: Buffer | null = null;
+            if (attachment.content) {
+              fileBuffer = typeof attachment.content === 'string'
+                ? Buffer.from(attachment.content, 'base64')
+                : Buffer.from(attachment.content);
+            } else if (attachment.url) {
+              try {
+                const res = await fetch(attachment.url);
+                if (res.ok) {
+                  fileBuffer = Buffer.from(await res.arrayBuffer());
+                } else {
+                  console.warn(`Failed to fetch attachment from url: ${attachment.url}, status: ${res.status}`);
+                }
+              } catch (fetchErr) {
+                console.error(`Error fetching attachment from url ${attachment.url}:`, fetchErr);
+              }
+            }
+
+            if (!fileBuffer) {
+              console.warn(`Skipping attachment ${filename}: could not retrieve file content/buffer.`);
+              continue;
+            }
+
+            // Upload attachment to Supabase Storage (user-spaces bucket)
+            const storagePath = `${userId}/${Date.now()}_${filename}`;
+            const { error: uploadErr } = await supabase.storage
+              .from('user-spaces')
+              .upload(storagePath, fileBuffer, {
+                contentType,
+                upsert: true
+              });
+
+            if (uploadErr) {
+              console.error(`Failed to upload attachment ${filename} to Supabase Storage:`, uploadErr.message);
+              continue;
+            }
+
+            uploadedStoragePaths.add(storagePath);
+
+            // Save database metadata record
+            const fileSizeMB = parseFloat((fileBuffer.length / (1024 * 1024)).toFixed(2));
+            const fileExtension = filename.includes('.') 
+              ? filename.substring(filename.lastIndexOf('.')).toLowerCase() 
+              : '';
+            const fileTypeClean = fileExtension.startsWith('.') ? fileExtension.substring(1) : (fileExtension || 'bin');
+
+            const { error: dbErr } = await supabase
+              .from('user_files')
+              .insert({
+                user_id: userId,
+                name: filename,
+                storage_path: storagePath,
+                file_type: fileTypeClean,
+                file_size_mb: fileSizeMB
+              });
+
+            if (dbErr) {
+              console.error(`Failed to register attachment ${filename} in user_files:`, dbErr.message);
+            } else {
+              console.log(`Successfully registered attachment ${filename} in user_files.`);
+            }
+
+            // Log upload activity
+            try {
+              await supabase.from('interactions_log').insert({
+                user_id: userId,
+                subject: `Uploaded document via Email: ${filename}`,
+                status: 'Completed'
+              });
+            } catch (err) {
+              console.warn('Could not log attachment upload interaction:', (err as Error).message);
+            }
+
+            // Add the attachment directly to the current query context
+            const fileExt = fileTypeClean.toLowerCase();
+            let fileTextContent = '';
+            if (fileExt === 'txt' || fileExt === 'md') {
+              fileTextContent = fileBuffer.toString('utf-8');
+            } else if (fileExt === 'docx') {
+              try {
+                const mammoth = require('mammoth');
+                const result = await mammoth.extractRawText({ buffer: fileBuffer });
+                fileTextContent = result.value;
+              } catch (docxErr) {
+                console.error(`Error extracting text from DOCX attachment ${filename}:`, docxErr);
+              }
+            } else if (fileExt === 'pdf') {
+              pdfAttachments.push({
+                data: fileBuffer,
+                mimeType: 'application/pdf'
+              });
+              fileReferenceContext += `\n\n--- Document: ${filename} (Attached PDF) ---\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n`;
+            }
+
+            if (fileTextContent) {
+              const cleanedText = FileProcessor.cleanToMarkdown(fileTextContent, filename);
+              if (cleanedText) {
+                fileReferenceContext += `\n\n--- Document: ${filename} ---\n${cleanedText}\n`;
+              }
+            }
+          }
+        }
+
+        // 2. Extract keywords from the query/subject/body for user files filtering
+        const searchText = `${subject} ${promptQuery || ''} ${bodyText}`;
+        const stopWords = new Set(['what', 'make', 'vessel', 'please', 'with', 'from', 'about', 'need', 'have', 'does', 'show', 'your', 'were', 'that', 'this', 'there', 'their', 'only', 'also', 'include', 'report', 'send', 'query', 'task', 'run', 'agent']);
+        const keywords = searchText
+          .toLowerCase()
+          .replace(/[^\w\s]/g, ' ')
+          .split(/\s+/)
+          .filter(word => word.length > 3 && !stopWords.has(word));
+
+        // 3. Collect files to download (both user's private files and agent specialized knowledge files)
         const filesToDownload: any[] = [];
 
-        // 1. Get global knowledge base files (analyst-uploaded reference materials)
+        // Fetch global knowledge base, agent specialized files, and user personal files in one query
+        const queryParts: string[] = [
+          'file_type.eq.knowledge_base',
+          `user_id.eq.${userId}`
+        ];
+        if (selectedAgentId) {
+          queryParts.push(`agent_id.eq.${selectedAgentId}`);
+        }
+
         const { data: userFiles, error: userFilesErr } = await supabase
           .from('user_files')
           .select('storage_path, name, file_type, user_id, agent_id')
-          .eq('file_type', 'knowledge_base');
+          .or(queryParts.join(','));
 
         if (userFilesErr) {
-          console.warn('Failed to query knowledge base files from database:', userFilesErr.message);
+          console.warn('Failed to query files from database:', userFilesErr.message);
         } else if (userFiles) {
           filesToDownload.push(...userFiles);
         }
 
-        // 2. Get agent specialized knowledge files
-        if (selectedAgentId) {
-          const { data: matchedAgentFiles, error: agentFilesErr } = await supabase
-            .from('user_files')
-            .select('storage_path, name, file_type, user_id, agent_id')
-            .eq('agent_id', selectedAgentId);
-
-          if (agentFilesErr) {
-            console.warn('Failed to query agent files from database:', agentFilesErr.message);
-          } else if (matchedAgentFiles) {
-            filesToDownload.push(...matchedAgentFiles);
-          }
-        }
+        FileProcessor.resetCache();
 
         if (filesToDownload.length > 0) {
-          console.log(`Total files to process for hybrid context: ${filesToDownload.length}`);
-          FileProcessor.resetCache();
+          console.log(`Total files queried for hybrid context: ${filesToDownload.length}`);
           for (const fileRef of filesToDownload) {
+            // Skip files that were uploaded as attachments in this run to avoid duplicate contexts
+            if (uploadedStoragePaths.has(fileRef.storage_path)) {
+              continue;
+            }
+
+            const isUserPersonalFile = fileRef.user_id === userId && fileRef.file_type !== 'knowledge_base' && !fileRef.agent_id;
+            const isAgentOrKB = !isUserPersonalFile;
+
+            // Determine file extension
+            let fileExt = (fileRef.file_type || '').toLowerCase();
+            if (fileExt === 'knowledge_base' && fileRef.name.includes('.')) {
+              fileExt = fileRef.name.substring(fileRef.name.lastIndexOf('.') + 1).toLowerCase();
+            }
+
+            const nameMatchesKeywords = keywords.length === 0 || keywords.some(kw => 
+              fileRef.name.toLowerCase().includes(kw)
+            );
+
+            // Skip personal PDF if name does not match keywords to prevent unnecessary storage downloads
+            if (isUserPersonalFile && fileExt === 'pdf' && !nameMatchesKeywords) {
+              continue;
+            }
+
             // Determine storage bucket: user space vs knowledge base
             const bucketName = (fileRef.agent_id || fileRef.user_id === '00000000-0000-0000-0000-000000000000' || fileRef.file_type === 'knowledge_base')
               ? 'knowledge-base'
@@ -355,10 +496,6 @@ export async function POST(req: NextRequest) {
               continue;
             }
 
-            let fileExt = (fileRef.file_type || '').toLowerCase();
-            if (fileExt === 'knowledge_base' && fileRef.name.includes('.')) {
-              fileExt = fileRef.name.substring(fileRef.name.lastIndexOf('.') + 1).toLowerCase();
-            }
             let fileTextContent = '';
             if (fileExt === 'txt' || fileExt === 'md') {
               fileTextContent = await fileBlob.text();
@@ -378,8 +515,17 @@ export async function POST(req: NextRequest) {
                 mimeType: 'application/pdf'
               });
               fileReferenceContext += `\n\n--- Document: ${fileRef.name} (Attached PDF) ---\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n`;
-            } else {
-              console.log(`Skipping file parsing for unsupported extension: ${fileExt}`);
+              continue;
+            }
+
+            // For personal text/docx files, verify keywords match either the name or content
+            if (isUserPersonalFile) {
+              const textMatchesKeywords = keywords.length === 0 || keywords.some(kw => 
+                fileTextContent.toLowerCase().includes(kw)
+              );
+              if (!nameMatchesKeywords && !textMatchesKeywords) {
+                continue;
+              }
             }
 
             if (fileTextContent) {
