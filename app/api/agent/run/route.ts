@@ -6,9 +6,12 @@ import { FileProcessor } from '../../../../src/services/fileProcessor';
 
 export async function POST(req: NextRequest) {
   const gemini = new GeminiService();
+  let userId: string | null = null;
+  let agent: any = null;
 
   try {
-    const { userId, agentId, queryInput, selectedFileIds, sendEmail } = await req.json();
+    const { userId: reqUserId, agentId, queryInput, selectedFileIds, sendEmail } = await req.json();
+    userId = reqUserId;
 
     if (!userId || !agentId || !queryInput) {
       return NextResponse.json({ error: 'Missing required parameters: userId, agentId, or queryInput' }, { status: 400 });
@@ -40,11 +43,13 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Fetch agent system prompt and classification info
-    const { data: agent, error: agentErr } = await supabase
+    const { data: dbAgent, error: agentErr } = await supabase
       .from('agents')
       .select('name, system_prompt, instructions')
       .eq('id', agentId)
       .maybeSingle();
+
+    agent = dbAgent;
 
     if (agentErr || !agent) {
       return NextResponse.json({ error: 'Agent profile not found' }, { status: 404 });
@@ -232,6 +237,10 @@ Mariner Profile:
       agent.system_prompt
     );
 
+    if (processedResult) {
+      processedResult = processedResult.replace(/gemini/gi, 'Generic AI');
+    }
+
     const disclaimer = `\n\n***\n[DISCLAIMER: M.A.T.E is an agentic AI assistant designed to support maritime operations. AI systems can make mistakes. Please re-verify all safety parameters, gas measurements, and checklist controls with your official vessel SMS and statutory guidelines before executing operations.]`;
     processedResult += disclaimer;
 
@@ -312,6 +321,19 @@ Mariner Profile:
 
   } catch (error) {
     console.error('Error running web agent:', error);
-    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
+    try {
+      await supabase
+        .from('interactions_log')
+        .insert({
+          user_id: userId || '11111111-1111-1111-1111-111111111111',
+          subject: `Web Portal run failed: ${agent?.name || 'Unknown Agent'}`,
+          status: 'Failed',
+          error_message: (error as Error).message || String(error),
+          routing_layer: 'Web Portal UI'
+        });
+    } catch (logErr) {
+      console.error('Failed to log failed interaction:', logErr);
+    }
+    return NextResponse.json({ error: 'An unexpected system error occurred. Our technical team has been notified. Please try again later.' }, { status: 500 });
   }
 }

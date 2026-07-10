@@ -624,6 +624,11 @@ Mariner Profile:
         pdfAttachments,
         selectedAgentPrompt
       );
+
+      if (processedResult) {
+        processedResult = processedResult.replace(/gemini/gi, 'Generic AI');
+      }
+
       const disclaimer = `\n\n***\n[DISCLAIMER: M.A.T.E is an agentic AI assistant designed to support maritime operations. AI systems can make mistakes. Please re-verify all safety parameters, gas measurements, and checklist controls with your official vessel SMS and statutory guidelines before executing operations.]`;
       processedResult += disclaimer;
     }
