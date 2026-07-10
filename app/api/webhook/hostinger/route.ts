@@ -79,6 +79,65 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
+    // 2.5 Filter and auto-respond to emails sent to hello@logmark-ai.com (support inbox)
+    const toRaw = emailData.to || emailData.recipient || emailData.toAddress || body.envelope?.to || '';
+    const toAddress = typeof toRaw === 'string'
+      ? (toRaw.includes('<') ? toRaw.match(/<([^>]+)>/)?.[1] || toRaw : toRaw).trim().toLowerCase()
+      : String(toRaw).toLowerCase();
+
+    if (toAddress.includes('hello@logmark-ai.com')) {
+      console.log(`Email received at support address hello@logmark-ai.com from ${from}. Sending redirection auto-reply...`);
+      try {
+        const redirectHtml = `
+<div style="background-color: #FCFBF8; font-family: 'Inter', -apple-system, sans-serif; color: #1c2024; padding: 32px 24px; max-width: 600px; margin: 0 auto; border: 1px solid #dcdad5; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+  <div style="border-bottom: 1px solid #dcdad5; padding-bottom: 16px; margin-bottom: 24px;">
+    <h2 style="font-family: 'Fraunces', Georgia, serif; color: #0a1826; font-size: 20px; font-weight: bold; margin: 0;">M.A.T.E Support</h2>
+    <span style="font-size: 9px; text-transform: uppercase; letter-spacing: 0.15em; color: #8c8c88; font-weight: bold; display: block; margin-top: 4px;">Maritime Automated Technical Executive</span>
+  </div>
+
+  <p style="font-size: 14px; line-height: 1.6; color: #1c2024; margin: 0 0 16px 0;">
+    Hello,
+  </p>
+
+  <p style="font-size: 14px; line-height: 1.6; color: #1c2024; margin: 0 0 16px 0;">
+    Thank you for contacting us at <strong>hello@logmark-ai.com</strong>. We have successfully received your message and our support team will review it shortly.
+  </p>
+
+  <div style="background: #f0f4ff; border: 1px solid #c7d2fe; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+    <p style="font-size: 13px; font-weight: bold; color: #1e1b4b; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 0.05em;">
+      Need an Automated AI Technical Assessment?
+    </p>
+    <p style="font-size: 12px; line-height: 1.6; color: #555; margin: 0;">
+      Please note that automated AI report generation, risk assessments, and voyage logs processing are handled exclusively through our dedicated assistant inbox.
+      To request an AI assessment, please resend your query directly to:<br>
+      <a href="mailto:mate@logmark-ai.com" style="color: #575ECF; font-weight: bold; text-decoration: none;">mate@logmark-ai.com</a>
+    </p>
+  </div>
+
+  <div style="border-top: 1px solid #dcdad5; padding-top: 16px; margin-top: 32px; font-size: 11px; color: #555; font-weight: 500;">
+    <p style="margin: 0 0 4px 0;">Best regards,</p>
+    <p style="margin: 0; font-weight: 700; color: #1c2024;">M.A.T.E Support Team</p>
+    <p style="margin: 2px 0 0 0; color: #8c8c88;">Merchant Navy Automation Systems</p>
+  </div>
+
+  <div style="border-top: 1px solid #dcdad5; padding-top: 12px; margin-top: 16px; font-size: 10px; color: #8c8c88; text-align: center; font-weight: 500;">
+    © 2026 M.A.T.E. Merchant Navy Automation Systems. All rights reserved.
+  </div>
+</div>
+        `;
+
+        await smtp.sendMail({
+          to: from,
+          subject: `Re: ${subject || 'General Inquiry Received'}`,
+          text: `Hello,\n\nThank you for reaching out to us at hello@logmark-ai.com. We'll look into it shortly.\n\nIf you need an automated AI technical assessment, please resend your query directly to mate@logmark-ai.com.\n\nBest regards,\nM.A.T.E Support Team`,
+          html: redirectHtml
+        });
+      } catch (mailErr) {
+        console.error('Failed to send redirection email:', (mailErr as Error).message);
+      }
+      return NextResponse.json({ success: true, message: 'Redirect auto-reply sent' });
+    }
+
     // Generate a fallback hash-based ID if none is supplied
     if (!webhookId && from && bodyText) {
       const crypto = require('crypto');
