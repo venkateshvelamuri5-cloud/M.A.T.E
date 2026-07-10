@@ -531,6 +531,19 @@ export default function UserDashboard() {
         error_message: `User Feedback: ${userFeedback}`
       });
       if (error) throw error;
+
+      // Fire feedback email notification — non-blocking
+      fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          feedback: userFeedback,
+          agentCode: selectedAgentSlot.code,
+          agentName: selectedAgentSlot.name
+        })
+      }).catch(err => console.warn('Feedback email failed (non-critical):', err));
+
       setFeedbackStatusMsg("Thank you for your feedback!");
       setUserFeedback('');
       setTimeout(() => setFeedbackStatusMsg(null), 3000);

@@ -320,6 +320,10 @@ export default function AnalystPortal() {
   const [totalInteractions, setTotalInteractions] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
 
+  const [showUsersList, setShowUsersList] = useState(false);
+  const [usersList, setUsersList] = useState<any[]>([]);
+  const [fetchingUsers, setFetchingUsers] = useState(false);
+
   // Agent Management states
   const [agents, setAgents] = useState<Agent[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
@@ -408,6 +412,25 @@ export default function AnalystPortal() {
       setStatusMsg('Error connecting to Supabase database.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchUsersList = async () => {
+    setFetchingUsers(true);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, rank, company_name, role, subscription_plan, vessel_name, vessel_type, operator_name, grt, created_at')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      if (data) {
+        setUsersList(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch users list:", err);
+      setStatusMsg("Failed to load officers details.");
+    } finally {
+      setFetchingUsers(false);
     }
   };
 
@@ -940,7 +963,11 @@ export default function AnalystPortal() {
           <p className="text-[10px] text-muted-foreground mt-1 font-medium">From {activeSubscribers} Premium Subscribers</p>
         </div>
 
-        <div className="bg-card border border-border/85 p-6 rounded-xl shadow-sm">
+        <div 
+          onClick={() => setShowLogs(!showLogs)}
+          className="bg-card border border-border/85 p-6 rounded-xl shadow-sm cursor-pointer hover:border-indigo-500 hover:shadow-md transition duration-150"
+          title="Click to toggle Activity Logs"
+        >
           <div className="flex justify-between items-center mb-4">
             <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Total Interactions</span>
             <Activity className="w-4.5 h-4.5 text-[#575ECF]" />
@@ -958,7 +985,16 @@ export default function AnalystPortal() {
           <p className="text-[10px] text-muted-foreground mt-1 font-medium">AI Core (${estimatedGeminiCost}) + SMTP (${estimatedSmtpCost})</p>
         </div>
 
-        <div className="bg-card border border-border/85 p-6 rounded-xl shadow-sm">
+        <div 
+          onClick={() => {
+            if (!showUsersList) {
+              fetchUsersList();
+            }
+            setShowUsersList(!showUsersList);
+          }}
+          className="bg-card border border-border/85 p-6 rounded-xl shadow-sm cursor-pointer hover:border-indigo-500 hover:shadow-md transition duration-150"
+          title="Click to view Officers Directory"
+        >
           <div className="flex justify-between items-center mb-4">
             <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">Registered Officers</span>
             <Users className="w-4.5 h-4.5 text-zinc-600" />
@@ -967,6 +1003,90 @@ export default function AnalystPortal() {
           <p className="text-[10px] text-muted-foreground mt-1 font-medium">Total active spaces</p>
         </div>
       </div>
+
+      {showUsersList && (
+        <div className="max-w-6xl mx-auto bg-card border border-border p-6 rounded-xl shadow-sm mb-8 relative z-10 font-sans">
+          <div className="flex justify-between items-center mb-4 pb-3 border-b border-border">
+            <div>
+              <h3 className="text-sm font-bold text-foreground font-display">Registered Officers Directory</h3>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Granular workspace profiles for all active mariner accounts.</p>
+            </div>
+            <button 
+              onClick={() => setShowUsersList(false)}
+              className="p-1 hover:bg-zinc-100 rounded transition text-muted-foreground hover:text-foreground"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {fetchingUsers ? (
+            <div className="py-8 text-center text-xs text-muted-foreground animate-pulse font-medium">
+              Loading officers details...
+            </div>
+          ) : usersList.length === 0 ? (
+            <div className="py-8 text-center text-xs text-muted-foreground italic font-medium">
+              No registered officers found.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-border text-zinc-450 font-bold uppercase tracking-wider text-[9px]">
+                    <th className="py-3 px-4">Officer Name</th>
+                    <th className="py-3 px-4">Email</th>
+                    <th className="py-3 px-4">Rank / Company</th>
+                    <th className="py-3 px-4">Vessel Specs</th>
+                    <th className="py-3 px-4">Plan</th>
+                    <th className="py-3 px-4">Joined Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usersList.map((user) => (
+                    <tr key={user.id} className="border-b border-zinc-100 hover:bg-zinc-50/50 transition">
+                      <td className="py-3 px-4 font-bold text-zinc-700">
+                        {user.full_name || 'N/A'}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-muted-foreground">
+                        {user.email}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-zinc-600">{user.rank || 'N/A'}</span>
+                          <span className="text-[10px] text-muted-foreground">{user.company_name || 'N/A'}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex flex-col text-[10px]">
+                          {user.vessel_name ? (
+                            <>
+                              <span className="font-semibold text-zinc-600">MV {user.vessel_name} ({user.vessel_type || 'General'})</span>
+                              <span className="text-muted-foreground">Operator: {user.operator_name || 'N/A'} | GRT: {user.grt || 'N/A'}</span>
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground italic">No vessel configured</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${
+                          user.subscription_plan === 'premium' 
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300' 
+                            : 'bg-zinc-100 text-muted-foreground border-border'
+                        }`}>
+                          {user.subscription_plan}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-muted-foreground text-[10px]">
+                        {user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {statusMsg && (
         <div className="max-w-6xl mx-auto bg-indigo-50 border border-[#575ECF]/40 p-4 rounded-lg text-indigo-800 text-xs flex items-center gap-2 mb-8 relative z-10">
@@ -1169,17 +1289,30 @@ export default function AnalystPortal() {
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap">
                           <div className="flex flex-col gap-1">
-                            <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border text-center ${
-                              log.status === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
-                              log.status === 'Failed' ? 'bg-rose-50 text-rose-700 border-rose-300' :
-                              'bg-zinc-100 text-muted-foreground border-border'
-                            }`}>
-                              {log.status}
-                            </span>
-                            {log.error_message && (
-                              <span className="text-[10px] text-rose-600 font-mono max-w-xs break-words whitespace-normal block mt-1 leading-normal" title={log.error_message}>
-                                Error: {log.error_message}
-                              </span>
+                            {log.error_message?.startsWith("User Feedback:") ? (
+                              <>
+                                <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border text-center bg-indigo-50 text-indigo-700 border-indigo-300">
+                                  Feedback
+                                </span>
+                                <span className="text-[10px] text-indigo-800 font-medium max-w-xs break-words whitespace-normal block mt-1 leading-normal" title={log.error_message}>
+                                  {log.error_message.replace("User Feedback:", "").trim()}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border text-center ${
+                                  log.status === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-300' :
+                                  log.status === 'Failed' ? 'bg-rose-50 text-rose-700 border-rose-300' :
+                                  'bg-zinc-100 text-muted-foreground border-border'
+                                }`}>
+                                  {log.status}
+                                </span>
+                                {log.error_message && (
+                                  <span className="text-[10px] text-rose-600 font-mono max-w-xs break-words whitespace-normal block mt-1 leading-normal" title={log.error_message}>
+                                    Error: {log.error_message}
+                                  </span>
+                                )}
+                              </>
                             )}
                           </div>
                         </td>

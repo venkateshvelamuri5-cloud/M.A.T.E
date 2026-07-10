@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SmtpService } from '../../../src/services/smtp';
-import { GeneratorService } from '../../../src/services/generator';
 
 const WELCOME_MANUAL_TEXT = `M.A.T.E USER MANUAL
 Maritime Automated Technical Executive
@@ -55,10 +54,10 @@ MODULES AVAILABLE
   E4 - Narcotics List (coming soon)
 
 (F) MISC, ADDITIONAL
-  F1 - SMS Clarification (Using AI)
-  F2 - Weather Reports
-  F3 - SIRE 2.0
-  F4 - General Maritime AI Query
+  F1 - SMS Clarification (work in progress)
+  F2 - Weather Reports (work in progress)
+  F3 - SIRE 2.0 (work in progress)
+  F4 - General Maritime AI Query (work in progress)
 
 
 ===========================================
@@ -169,7 +168,6 @@ Maritime Automated Technical Executive
  */
 export async function POST(req: NextRequest) {
   const smtp = new SmtpService();
-  const generator = new GeneratorService();
 
   try {
     const body = await req.json();
@@ -180,9 +178,6 @@ export async function POST(req: NextRequest) {
     }
 
     const name = fullName ? fullName.split(' ')[0] : 'Mariner';
-
-    // Generate the user manual PDF
-    const manualPdf = await generator.generatePDF(WELCOME_MANUAL_TEXT);
 
     // Build the welcome email HTML
     const htmlBody = `
@@ -237,31 +232,24 @@ export async function POST(req: NextRequest) {
     <tr>
       <td style="padding:6px 10px; border:1px solid #e5e4df;"><strong>F1</strong></td>
       <td style="padding:6px 10px; border:1px solid #e5e4df;">SMS Clarification</td>
-      <td style="padding:6px 10px; border:1px solid #e5e4df; color:#059669; font-weight:bold;">Active</td>
+      <td style="padding:6px 10px; border:1px solid #e5e4df; color:#d97706; font-weight:bold;">Work in progress</td>
     </tr>
     <tr style="background:#f5f5f0;">
       <td style="padding:6px 10px; border:1px solid #e5e4df;"><strong>F2</strong></td>
       <td style="padding:6px 10px; border:1px solid #e5e4df;">Weather Reports</td>
-      <td style="padding:6px 10px; border:1px solid #e5e4df; color:#059669; font-weight:bold;">Active</td>
+      <td style="padding:6px 10px; border:1px solid #e5e4df; color:#d97706; font-weight:bold;">Work in progress</td>
     </tr>
     <tr>
       <td style="padding:6px 10px; border:1px solid #e5e4df;"><strong>F3</strong></td>
       <td style="padding:6px 10px; border:1px solid #e5e4df;">SIRE 2.0</td>
-      <td style="padding:6px 10px; border:1px solid #e5e4df; color:#059669; font-weight:bold;">Active</td>
+      <td style="padding:6px 10px; border:1px solid #e5e4df; color:#d97706; font-weight:bold;">Work in progress</td>
     </tr>
     <tr style="background:#f5f5f0;">
       <td style="padding:6px 10px; border:1px solid #e5e4df;"><strong>F4</strong></td>
       <td style="padding:6px 10px; border:1px solid #e5e4df;">General Maritime AI</td>
-      <td style="padding:6px 10px; border:1px solid #e5e4df; color:#059669; font-weight:bold;">Active</td>
+      <td style="padding:6px 10px; border:1px solid #e5e4df; color:#d97706; font-weight:bold;">Work in progress</td>
     </tr>
   </table>
-
-  <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:14px; margin-bottom:24px;">
-    <p style="font-size:11px; color:#92400e; margin:0; line-height:1.6;">
-      <strong>📎 Attached:</strong> Your complete M.A.T.E User Manual (PDF) with step-by-step instructions,
-      module guide, email formatting examples, and routing keywords. Please save it for reference.
-    </p>
-  </div>
 
   <div style="background:#fff; border:1px solid #dcdad5; border-radius:8px; padding:14px; margin-bottom:24px;">
     <h3 style="font-size:12px; font-weight:bold; color:#0a1826; margin:0 0 8px 0;">Quick Email Example</h3>
@@ -283,15 +271,8 @@ export async function POST(req: NextRequest) {
     await smtp.sendMail({
       to: email,
       subject: `Welcome to M.A.T.E — Your Maritime AI Assistant is Ready`,
-      text: `Welcome to M.A.T.E, ${name}!\n\nYour workspace is now active. Please find your complete User Manual attached as a PDF.\n\nQuick start:\n- Email: Send queries to mate@logmark-ai.com from your vessel email. Use [A1] in subject for guaranteed routing.\n- Web UI: Login to your dashboard, select a module, fill Steps 1-4 and submit.\n\nDisclaimer: M.A.T.E can make mistakes. Please re-verify all outputs.\n\nFair winds!\nM.A.T.E Team`,
-      html: htmlBody,
-      attachments: [
-        {
-          filename: 'MATE_User_Manual.pdf',
-          content: manualPdf,
-          contentType: 'application/pdf'
-        }
-      ]
+      text: `Welcome to M.A.T.E, ${name}!\n\nYour workspace is now active.\n\nQuick start:\n- Email: Send queries to mate@logmark-ai.com from your vessel email. Use [A1] in subject for guaranteed routing.\n- Web UI: Login to your dashboard, select a module, fill Steps 1-4 and submit.\n\nDisclaimer: M.A.T.E can make mistakes. Please re-verify all outputs.\n\nFair winds!\nM.A.T.E Team`,
+      html: htmlBody
     });
 
     console.log(`Welcome email sent successfully to: ${email}`);

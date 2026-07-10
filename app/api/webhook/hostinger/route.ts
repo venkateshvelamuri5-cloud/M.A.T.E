@@ -638,7 +638,7 @@ Mariner Profile:
     const vesselName = profile?.vessel_name ? `MV ${profile.vessel_name}` : 'your vessel';
     const queryRef = subject ? `your request: "${subject}"` : 'your maritime inquiry';
 
-    const plainTextBody = `Dear ${senderRank} ${senderName},\n\nThank you for your query via M.A.T.E. Please find below the generated response to ${queryRef}.\n\n---\n\n${processedResult}\n\n---\n\nThis response has been generated and tailored specifically for ${vesselName}. Please review all safety-critical parameters against your vessel's SMS and statutory requirements before execution.\n\nShould you require any clarification or a revised assessment, please do not hesitate to re-submit your query.\n\nBest regards,\nM.A.T.E — Maritime Automated Technical Executive\nLogmark Marine Systems`;
+    const plainTextBody = `Dear ${senderRank} ${senderName},\n\nThank you for your query via M.A.T.E. Please find below the generated response to ${queryRef}.\n\n---\n\n${processedResult}\n\n---\n\nThis response has been generated and tailored specifically for ${vesselName}. Please review all safety-critical parameters against your vessel's SMS and statutory requirements before execution.\n\nShould you require any clarification or a revised assessment, please do not hesitate to re-submit your query.\n\nBest regards,\nM.A.T.E — Maritime Automated Technical Executive\nMerchant Navy Automation Systems`;
 
     // Format output spacing and markup structure to styled HTML
     const formattedHtml = wrapInEmailTemplate(formatMarkdownToHtml(processedResult), senderRank, senderName, vesselName, queryRef);
@@ -824,7 +824,7 @@ function wrapInEmailTemplate(formattedBody: string, rank?: string, name?: string
   <div style="border-top: 1px solid #dcdad5; padding-top: 16px; margin-top: 32px; font-size: 11px; color: #555; font-weight: 500;">
     <p style="margin: 0 0 4px 0;">Best regards,</p>
     <p style="margin: 0; font-weight: 700; color: #1c2024;">M.A.T.E — Maritime Automated Technical Executive</p>
-    <p style="margin: 2px 0 0 0; color: #8c8c88;">Logmark Marine Systems</p>
+    <p style="margin: 2px 0 0 0; color: #8c8c88;">Merchant Navy Automation Systems</p>
   </div>
   <div style="border-top: 1px solid #dcdad5; padding-top: 12px; margin-top: 16px; font-size: 10px; color: #8c8c88; text-align: center; font-weight: 500;">
     © 2026 M.A.T.E. Merchant Navy Automation Systems. All rights reserved.
