@@ -335,7 +335,7 @@ export default function LandingPage() {
           <div className="flex gap-6">
             <a href="#modules" className="hover:text-foreground transition">Modules</a>
             <a href="#email" className="hover:text-foreground transition">Email Access</a>
-            <a href="mailto:hello@mate.ai" className="hover:text-foreground transition">Contact</a>
+            <a href="mailto:mate@logmark-ai.com" className="hover:text-foreground transition">Contact</a>
           </div>
         </div>
       </footer>
