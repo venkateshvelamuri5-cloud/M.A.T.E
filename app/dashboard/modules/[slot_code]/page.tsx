@@ -670,7 +670,7 @@ The email sent out can be formatted or plain text. Plain text option is preferre
 
 ----------------------------------------------------
 HOW TO :-
-TO : hello@logmark-ai.com
+TO : mate@logmark-ai.com
 SUBJECT : Enter the name of the module you want to query. Please ensure that you use one of the following: "RA", "RISK ASSESSMENT", "SAFETY ASSESSMENT", or "RISK ANALYSIS". Please note that the MATE ‘may not’ reliably process or recognize keywords outside of this list.
 BODY : Insert a one liner query to the risk assessment module.
 
@@ -686,7 +686,7 @@ For example :- A query “Make RA for ‘midship crane not operating prior comin
 
 ----------------------------------------------------
 EXAMPLE :-
-TO : hello@logmark-ai.com
+TO : mate@logmark-ai.com
 
 SUBJECT : Risk Assessment
 
