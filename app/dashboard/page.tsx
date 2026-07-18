@@ -93,6 +93,24 @@ const AGENT_SLOTS: AgentSlot[] = [
     placeholder2: "Main points discussed and feedback.",
     systemDirective: "Act as the ISM Admin Works A4 Training Minutes agent. Draft detailed training minutes for safety meeting logs."
   },
+  {
+    code: 'A5',
+    name: '',
+    category: '(A) ISM Admin Works',
+    deployed: false,
+    emailExample: '',
+    placeholder1: '',
+    systemDirective: ''
+  },
+  {
+    code: 'A6',
+    name: '',
+    category: '(A) ISM Admin Works',
+    deployed: false,
+    emailExample: '',
+    placeholder1: '',
+    systemDirective: ''
+  },
 
   // Category B: Accounting & Payroll
   {
@@ -135,6 +153,24 @@ const AGENT_SLOTS: AgentSlot[] = [
     placeholder2: "Vessel location and provisioning port.",
     systemDirective: "Act as the Accounting & Payroll B4 Victualling Accounting agent. Calculate victualling provisions, costs per man-day, and consumption levels."
   },
+  {
+    code: 'B5',
+    name: '',
+    category: '(B) Accounting & Payroll',
+    deployed: false,
+    emailExample: '',
+    placeholder1: '',
+    systemDirective: ''
+  },
+  {
+    code: 'B6',
+    name: '',
+    category: '(B) Accounting & Payroll',
+    deployed: false,
+    emailExample: '',
+    placeholder1: '',
+    systemDirective: ''
+  },
 
   // Category C: Crew Related
   {
@@ -176,6 +212,24 @@ const AGENT_SLOTS: AgentSlot[] = [
     placeholder1: '',
     systemDirective: ''
   },
+  {
+    code: 'C5',
+    name: '',
+    category: '(C) Crew Related',
+    deployed: false,
+    emailExample: '',
+    placeholder1: '',
+    systemDirective: ''
+  },
+  {
+    code: 'C6',
+    name: '',
+    category: '(C) Crew Related',
+    deployed: false,
+    emailExample: '',
+    placeholder1: '',
+    systemDirective: ''
+  },
 
   // Category D: Cargo Related
   {
@@ -209,6 +263,24 @@ const AGENT_SLOTS: AgentSlot[] = [
   },
   {
     code: 'D4',
+    name: '',
+    category: '(D) Cargo Related',
+    deployed: false,
+    emailExample: '',
+    placeholder1: '',
+    systemDirective: ''
+  },
+  {
+    code: 'D5',
+    name: '',
+    category: '(D) Cargo Related',
+    deployed: false,
+    emailExample: '',
+    placeholder1: '',
+    systemDirective: ''
+  },
+  {
+    code: 'D6',
     name: '',
     category: '(D) Cargo Related',
     deployed: false,
@@ -257,6 +329,24 @@ const AGENT_SLOTS: AgentSlot[] = [
     placeholder1: '',
     systemDirective: ''
   },
+  {
+    code: 'E5',
+    name: '',
+    category: '(E) Inventories',
+    deployed: false,
+    emailExample: '',
+    placeholder1: '',
+    systemDirective: ''
+  },
+  {
+    code: 'E6',
+    name: '',
+    category: '(E) Inventories',
+    deployed: false,
+    emailExample: '',
+    placeholder1: '',
+    systemDirective: ''
+  },
 
   // Category F: Misc, Additional
   {
@@ -297,6 +387,24 @@ const AGENT_SLOTS: AgentSlot[] = [
     placeholder1: "e.g., General maritime question.",
     placeholder2: "Standard guidelines context.",
     systemDirective: "Act as the General Maritime AI Agent. Provide clear safety and operational guidelines."
+  },
+  {
+    code: 'F5',
+    name: '',
+    category: '(F) Misc, Additional',
+    deployed: false,
+    emailExample: '',
+    placeholder1: '',
+    systemDirective: ''
+  },
+  {
+    code: 'F6',
+    name: '',
+    category: '(F) Misc, Additional',
+    deployed: false,
+    emailExample: '',
+    placeholder1: '',
+    systemDirective: ''
   }
 ];
 
