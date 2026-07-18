@@ -1,19 +1,44 @@
-import { GoogleGenAI } from '@google/genai';
+import { VertexAI } from '@google-cloud/vertexai';
 
 /**
  * Gemini Service Class
- * Integrates official Google Gen AI SDK to clean text, scrub PII, and handle search grounding.
+ * Integrates Google Cloud Vertex AI SDK to clean text, scrub PII, and handle search grounding.
  */
 export class GeminiService {
-  private ai: GoogleGenAI;
+  private vertexAI: VertexAI;
+  private modelName: string;
 
   constructor() {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.warn('Warning: GEMINI_API_KEY is not defined in environment variables.');
+    const project = process.env.VERTEX_PROJECT_ID || process.env.GCP_PROJECT_ID || '';
+    const location = process.env.VERTEX_LOCATION || 'us-central1';
+    const clientEmail = process.env.VERTEX_CLIENT_EMAIL;
+    const privateKey = process.env.VERTEX_PRIVATE_KEY;
+
+    this.modelName = process.env.VERTEX_MODEL || 'gemini-1.5-flash';
+
+    if (!project) {
+      console.warn('Warning: VERTEX_PROJECT_ID is not defined in environment variables. Defaulting to Application Default Credentials.');
     }
-    // Initialize the official Google Gen AI SDK
-    this.ai = new GoogleGenAI({ apiKey: apiKey || '' });
+
+    const options: any = { project, location };
+    if (clientEmail && privateKey) {
+      options.googleAuthOptions = {
+        credentials: {
+          client_email: clientEmail,
+          private_key: privateKey.replace(/\\n/g, '\n')
+        }
+      };
+    }
+
+    this.vertexAI = new VertexAI(options);
+  }
+
+  /**
+   * Helper to safely extract response text from Vertex AI SDK's GenerateContentResult
+   */
+  private getResponseText(result: any): string {
+    const part = result?.response?.candidates?.[0]?.content?.parts?.[0];
+    return (part as any)?.text || '';
   }
 
   /**
@@ -39,8 +64,8 @@ export class GeminiService {
 
     try {
       // 2. Instruct Gemini to thoroughly clean, fix formatting, and verify PII is completely redacted
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+      const model = this.vertexAI.getGenerativeModel({ model: this.modelName });
+      const response = await model.generateContent({
         contents: [
           {
             role: 'user',
@@ -53,7 +78,8 @@ export class GeminiService {
         ]
       });
 
-      return response.text?.trim() || preScrubbed;
+      const responseText = this.getResponseText(response);
+      return responseText.trim() || preScrubbed;
     } catch (error) {
       console.error('Error calling Gemini for text cleanup:', error);
       return preScrubbed; // Fallback to local scrubbed version if API fails
@@ -108,21 +134,23 @@ ${query}
         });
       }
 
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+      const model = this.vertexAI.preview.getGenerativeModel({
+        model: this.modelName,
+        systemInstruction: activeSystemPrompt,
+        tools: [{ googleSearchRetrieval: {} }]
+      });
+
+      const response = await model.generateContent({
         contents: [
           {
             role: 'user',
             parts: parts
           }
-        ],
-        config: {
-          systemInstruction: activeSystemPrompt,
-          tools: [{ googleSearch: {} }]
-        }
+        ]
       });
 
-      return response.text?.trim() || 'No response generated.';
+      const responseText = this.getResponseText(response);
+      return responseText.trim() || 'No response generated.';
     } catch (error) {
       console.error('Error calling Gemini for grounded query:', error);
       throw new Error(`Failed to process query with Gemini grounding: ${(error as Error).message}`);
@@ -214,8 +242,8 @@ ${query}
         return parts.join(', ');
       }).join('\n');
 
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+      const model = this.vertexAI.getGenerativeModel({ model: this.modelName });
+      const response = await model.generateContent({
         contents: [
           {
             role: 'user',
@@ -240,7 +268,7 @@ ${query}`
         ]
       });
 
-      const matchedId = response.text?.trim() || '';
+      const matchedId = this.getResponseText(response) || '';
       return matchedId.replace(/['"` \n\r]/g, '');
     } catch (error) {
       console.error('Error classifying query with Gemini:', error);
