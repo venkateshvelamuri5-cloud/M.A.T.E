@@ -478,7 +478,6 @@ export default function ModulePage({ params }: { params: { slot_code: string } }
 
       if (files) {
         setUploadedFiles(files);
-        setWebRunSelectedFiles(files.map(f => f.id));
       }
 
       // 3. Fetch Agents configuration
