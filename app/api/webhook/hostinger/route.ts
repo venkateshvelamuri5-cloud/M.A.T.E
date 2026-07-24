@@ -138,6 +138,75 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, message: 'Redirect auto-reply sent' });
     }
 
+    if (subject.toLowerCase().includes('help')) {
+      console.log(`Help request received from ${from}. Sending M.A.T.E user guide...`);
+      try {
+        const helpHtml = `
+<div style="background-color: #FCFBF8; font-family: 'Inter', -apple-system, sans-serif; color: #1c2024; padding: 32px 24px; max-width: 600px; margin: 0 auto; border: 1px solid #dcdad5; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+  <!-- Header -->
+  <div style="border-bottom: 1px solid #dcdad5; padding-bottom: 16px; margin-bottom: 24px;">
+    <h2 style="font-family: 'Fraunces', Georgia, serif; color: #0a1826; font-size: 20px; font-weight: bold; margin: 0;">M.A.T.E User Guide</h2>
+    <span style="font-size: 9px; text-transform: uppercase; letter-spacing: 0.15em; color: #8c8c88; font-weight: bold; display: block; margin-top: 4px;">Maritime Automated Technical Executive</span>
+  </div>
+
+  <p style="font-size: 14px; line-height: 1.6; color: #1c2024; margin: 0 0 16px 0;">
+    Hello! You are receiving this guide because you sent an email with the subject "Help". Here is how the <strong>M.A.T.E</strong> system works to assist your daily maritime operations.
+  </p>
+
+  <!-- Section: How it works -->
+  <h3 style="font-size: 14px; font-weight: bold; color: #0a1826; text-transform: uppercase; letter-spacing: 0.05em; margin: 24px 0 12px 0; border-bottom: 1px solid #eaeae8; padding-bottom: 4px;">
+    How M.A.T.E Works
+  </h3>
+  
+  <ol style="font-size: 13px; line-height: 1.8; color: #3c4043; padding-left: 20px; margin: 0 0 20px 0;">
+    <li style="margin-bottom: 8px;">
+      <strong>Dedicated Assistant Inbox:</strong> Simply send your queries directly to 
+      <a href="mailto:mate@logmark-ai.com" style="color: #575ECF; text-decoration: none; font-weight: bold;">mate@logmark-ai.com</a>.
+    </li>
+    <li style="margin-bottom: 8px;">
+      <strong>Specialized Agent Routing:</strong> M.A.T.E automatically scans your subject and message contents to route your task to the best matching agent (e.g. <em>Risk Assessment, Audit Closure, Cargo Calculations, or SMS Clarification</em>).
+    </li>
+    <li style="margin-bottom: 8px;">
+      <strong>Vessel Particulars Customization:</strong> All answers are dynamically tailored to your specific vessel (configured in your Web Portal profile) including machinery configurations, trading zones, and bow thruster specs.
+    </li>
+    <li style="margin-bottom: 8px;">
+      <strong>Document Grounding:</strong> M.A.T.E references safety manuals, guidelines, or letterheads uploaded to your personal workspace to format standard reports.
+    </li>
+  </ol>
+
+  <!-- Section: Tips and Tricks -->
+  <div style="background: #fcf8f2; border: 1px solid #f2e3d3; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+    <p style="font-size: 13px; font-weight: bold; color: #663c00; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 0.05em;">
+      💡 Tips for Best Results
+    </p>
+    <ul style="font-size: 12px; line-height: 1.6; color: #5c4d37; padding-left: 16px; margin: 0;">
+      <li style="margin-bottom: 4px;"><strong>Target specific slots:</strong> Put the slot code in your subject to force-route (e.g., include <code>[A1]</code> for Risk Assessment or <code>[A2]</code> for Audit Closure findings).</li>
+      <li style="margin-bottom: 4px;"><strong>Request attachments:</strong> End your query with <em>"send PDF"</em> or <em>"attach DOCX"</em> to receive a formally generated document back in your inbox.</li>
+      <li style="margin-bottom: 4px;"><strong>Attach reference PDFs:</strong> Attach company circulars or checklist templates directly to your email, and M.A.T.E will read and use them to construct the response.</li>
+    </ul>
+  </div>
+
+  <!-- Footer Info -->
+  <div style="border-top: 1px solid #dcdad5; padding-top: 16px; margin-top: 32px; font-size: 11px; color: #555; font-weight: 500;">
+    <p style="margin: 0 0 4px 0;">Best regards,</p>
+    <p style="margin: 0; font-weight: 700; color: #1c2024;">M.A.T.E Support Team</p>
+    <p style="margin: 2px 0 0 0; color: #8c8c88;">Merchant Navy Automation Systems</p>
+  </div>
+</div>
+        `;
+
+        await smtp.sendMail({
+          to: from,
+          subject: `Re: ${subject} (M.A.T.E User Guide)`,
+          text: `Hello!\n\nHere is how M.A.T.E (Maritime Automated Technical Executive) works...\n\n(Please open this email in an HTML-compatible client to view the complete guide.)\n\nBest regards,\nM.A.T.E Support Team`,
+          html: helpHtml
+        });
+      } catch (mailErr) {
+        console.error('Failed to send help guide email:', (mailErr as Error).message);
+      }
+      return NextResponse.json({ success: true, message: 'Help guide auto-reply sent' });
+    }
+
     // Generate a fallback hash-based ID if none is supplied
     if (!webhookId && from && bodyText) {
       const crypto = require('crypto');
