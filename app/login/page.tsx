@@ -13,11 +13,20 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
+    // Check if URL has ?error=disabled
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('error') === 'disabled') {
+      setStatusMsg("Auth failed: Your account has been disabled. Please contact support at hello@logmark-ai.com.");
+    }
+
     // Check if user is already logged in
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        router.push('/dashboard');
+        // Only redirect if not explicitly redirected with error
+        if (params.get('error') !== 'disabled') {
+          router.push('/dashboard');
+        }
       }
     };
     checkUser();

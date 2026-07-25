@@ -542,6 +542,25 @@ export default function AnalystPortal() {
     }
   };
 
+  const handleToggleUserStatus = async (userId: string, currentRole: string) => {
+    setStatusMsg(null);
+    const newRole = currentRole === 'disabled' ? 'user' : 'disabled';
+    const actionLabel = newRole === 'disabled' ? 'disabled' : 'enabled';
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ role: newRole })
+        .eq('id', userId);
+
+      if (error) throw error;
+      setStatusMsg(`Successfully ${actionLabel} officer's access.`);
+      fetchUsersList();
+    } catch (err) {
+      console.error("Failed to toggle user status:", err);
+      setStatusMsg(`Failed to update user status: ${(err as Error).message}`);
+    }
+  };
+
   useEffect(() => {
     const checkSession = async () => {
       try {
@@ -1145,7 +1164,9 @@ export default function AnalystPortal() {
                     <th className="py-3 px-4">Rank / Company</th>
                     <th className="py-3 px-4">Vessel Specs</th>
                     <th className="py-3 px-4">Plan</th>
+                    <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-4">Joined Date</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1184,8 +1205,31 @@ export default function AnalystPortal() {
                           {user.subscription_plan}
                         </span>
                       </td>
+                      <td className="py-3 px-4">
+                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${
+                          user.role === 'disabled' 
+                            ? 'bg-red-50 text-red-700 border-red-300' 
+                            : 'bg-green-50 text-green-700 border-green-300'
+                        }`}>
+                          {user.role === 'disabled' ? 'Disabled' : 'Active'}
+                        </span>
+                      </td>
                       <td className="py-3 px-4 text-muted-foreground text-[10px]">
                         {user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        {user.email !== 'hello@logmark-ai.com' && (
+                          <button
+                            onClick={() => handleToggleUserStatus(user.id, user.role)}
+                            className={`px-3 py-1 rounded-full text-[10px] font-bold transition border hover:scale-[1.02] transform duration-150 ${
+                              user.role === 'disabled'
+                                ? 'bg-zinc-100 text-green-700 border-green-300 hover:bg-green-50/50'
+                                : 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100/50'
+                            }`}
+                          >
+                            {user.role === 'disabled' ? 'Enable Access' : 'Disable Access'}
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

@@ -242,6 +242,20 @@ export async function POST(req: NextRequest) {
         console.warn('Supabase profile query encountered error:', profileErr.message);
       }
 
+      if (profile && profile.role === 'disabled') {
+        console.log(`User ${from} is disabled. Sending access suspension auto-reply...`);
+        try {
+          await smtp.sendMail({
+            to: from,
+            subject: `Re: ${subject || 'M.A.T.E Account Suspended'}`,
+            text: `Hello,\n\nYour M.A.T.E workspace access has been disabled by the system administrator.\n\nIf you believe this is an error or wish to restore access, please contact us at hello@logmark-ai.com.\n\nThank you,\nM.A.T.E Team`
+          });
+        } catch (mailErr) {
+          console.error('Failed to send suspension email:', (mailErr as Error).message);
+        }
+        return NextResponse.json({ success: false, message: 'User account is disabled. Sent suspension notification.' });
+      }
+
       if (!profile) {
         console.log(`User profile for ${from} not found. Sending sign up instruction email...`);
         await smtp.sendMail({

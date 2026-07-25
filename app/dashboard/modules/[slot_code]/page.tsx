@@ -463,11 +463,19 @@ export default function ModulePage({ params }: { params: { slot_code: string } }
       // Fetch Profile plan
       const { data: profile } = await supabase
         .from('profiles')
-        .select('subscription_plan')
+        .select('subscription_plan, role')
         .eq('id', uid)
         .maybeSingle();
-      if (profile?.subscription_plan) {
-        setSubscriptionPlan(profile.subscription_plan);
+
+      if (profile) {
+        if (profile.role === 'disabled') {
+          await supabase.auth.signOut();
+          router.push('/login?error=disabled');
+          return;
+        }
+        if (profile.subscription_plan) {
+          setSubscriptionPlan(profile.subscription_plan);
+        }
       }
 
       // 2. Fetch Uploaded Files (only user workspace files)

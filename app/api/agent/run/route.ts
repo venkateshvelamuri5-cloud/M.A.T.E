@@ -20,12 +20,16 @@ export async function POST(req: NextRequest) {
     // 1. Fetch user profile
     const { data: profile, error: profileErr } = await supabase
       .from('profiles')
-      .select('email, full_name, rank, company_name, subscription_plan, vessel_name, vessel_type, operator_name, grt, has_pump_room, pump_system_type, has_bow_thruster, carries_chemical_cargo, has_egcs, egcs_type, operates_us_waters, operates_aus_nz_waters, operates_eu_waters, operates_chinese_waters')
+      .select('role, email, full_name, rank, company_name, subscription_plan, vessel_name, vessel_type, operator_name, grt, has_pump_room, pump_system_type, has_bow_thruster, carries_chemical_cargo, has_egcs, egcs_type, operates_us_waters, operates_aus_nz_waters, operates_eu_waters, operates_chinese_waters')
       .eq('id', userId)
       .maybeSingle();
 
     if (profileErr || !profile) {
       return NextResponse.json({ error: 'Failed to verify mariner profile' }, { status: 404 });
+    }
+
+    if (profile.role === 'disabled') {
+      return NextResponse.json({ error: 'Access denied: Your account has been disabled.' }, { status: 403 });
     }
 
     // 2. Verify and increment limits

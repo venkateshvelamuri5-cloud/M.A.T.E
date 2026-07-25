@@ -778,6 +778,14 @@ export default function UserDashboard() {
         .eq('id', uid)
         .maybeSingle();
 
+      if (profile && profile.role === 'disabled') {
+        await supabase.auth.signOut();
+        setIsLoggedIn(false);
+        setUserId(null);
+        router.push('/login?error=disabled');
+        return;
+      }
+
       if (!profile) {
         const { data: newProfile } = await supabase
           .from('profiles')
