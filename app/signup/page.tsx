@@ -32,6 +32,12 @@ export default function SignupPage() {
     setStatusMsg(null);
     setIsLoading(true);
 
+    if (!emailInput.toLowerCase().endsWith('@gmail.com')) {
+      setStatusMsg("Registration failed: Only Gmail accounts (@gmail.com) are permitted to register.");
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const { data, error } = await supabase.auth.signUp({
         email: emailInput,
@@ -179,6 +185,9 @@ export default function SignupPage() {
                   className="w-full pl-10 pr-4 py-2.5 border border-border focus:border-gold bg-[#FAF9F6] rounded-xl text-xs outline-none text-foreground transition font-medium"
                 />
               </div>
+              {emailInput.includes('@') && !emailInput.toLowerCase().endsWith('@gmail.com') && (
+                <p className="text-red-500 text-[10px] mt-1 font-bold">Only Gmail accounts (@gmail.com) are permitted.</p>
+              )}
             </div>
 
             <div>

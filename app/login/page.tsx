@@ -37,6 +37,12 @@ export default function LoginPage() {
     setStatusMsg(null);
     setIsLoading(true);
 
+    if (emailInput.toLowerCase() !== 'hello@logmark-ai.com') {
+      setStatusMsg("Auth failed: Only Gmail accounts are permitted.");
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email: emailInput,
@@ -124,7 +130,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {emailInput.toLowerCase().includes('gmail') ? (
+          {emailInput.toLowerCase().endsWith('@gmail.com') ? (
             <div className="space-y-4 pt-2">
               <div className="p-3.5 rounded-xl text-xs border bg-amber-50/50 border-amber-200 text-amber-800 font-medium">
                 Gmail accounts are required to log in securely with Google Sign-In.
@@ -144,6 +150,12 @@ export default function LoginPage() {
                 Continue with Google
               </button>
             </div>
+          ) : emailInput.includes('@') && emailInput.toLowerCase() !== 'hello@logmark-ai.com' ? (
+            <div className="space-y-4 pt-2">
+              <div className="p-3.5 rounded-xl text-xs border bg-red-50/50 border-red-200 text-red-700 font-medium">
+                Only Gmail accounts (@gmail.com) are permitted to access M.A.T.E.
+              </div>
+            </div>
           ) : (
             <div className="space-y-4">
               <div>
@@ -160,10 +172,10 @@ export default function LoginPage() {
                   />
                 </div>
               </div>
-
+ 
               <button 
                 type="submit" 
-                disabled={isLoading}
+                disabled={isLoading || emailInput.toLowerCase() !== 'hello@logmark-ai.com'}
                 className="w-full py-3 rounded-full bg-primary hover:bg-primary/95 text-primary-foreground font-semibold text-xs uppercase tracking-wider transition shadow-md shadow-primary/20 flex items-center justify-center gap-2 hover:scale-[1.02] transform duration-150"
               >
                 {isLoading ? "Signing in..." : <>Sign In <LogIn className="w-4 h-4" /></>}
