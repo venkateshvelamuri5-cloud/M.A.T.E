@@ -1,19 +1,20 @@
-import { GoogleGenAI } from '@google/genai';
+import Groq from 'groq-sdk';
+import pdfParse from 'pdf-parse';
 
 /**
  * Gemini Service Class
- * Integrates official Google Gen AI SDK to clean text, scrub PII, and handle search grounding.
+ * Integrates Groq SDK to clean text, scrub PII, and handle search grounding using Llama 3.1 8B.
  */
 export class GeminiService {
-  private ai: GoogleGenAI;
+  private groq: Groq;
 
   constructor() {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
-      console.warn('Warning: GEMINI_API_KEY is not defined in environment variables.');
+      console.warn('Warning: GROQ_API_KEY is not defined in environment variables.');
     }
-    // Initialize the official Google Gen AI SDK
-    this.ai = new GoogleGenAI({ apiKey: apiKey || '' });
+    // Initialize the official Groq SDK
+    this.groq = new Groq({ apiKey: apiKey || '' });
   }
 
   /**
@@ -31,31 +32,26 @@ export class GeminiService {
   }
 
   /**
-   * Cleans text input, scrubs PII, and formats it using Gemini
+   * Cleans text input, scrubs PII, and formats it using Llama 3.1 8B via Groq
    */
   async cleanAndScrubText(rawText: string): Promise<string> {
     // 1. Local basic scrub first
     const preScrubbed = this.scrubPIILocal(rawText);
 
     try {
-      // 2. Instruct Gemini to thoroughly clean, fix formatting, and verify PII is completely redacted
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-3.5-flash',
-        contents: [
+      const response = await this.groq.chat.completions.create({
+        model: 'llama-3.1-8b-instant',
+        messages: [
           {
             role: 'user',
-            parts: [
-              {
-                text: `You are a PII scrubbing and text cleanup assistant. Clean, format, and redact any remaining personally identifiable information (PII) such as specific physical addresses, government IDs, and financial information from the text below. Make it professional and clean while preserving the core message. Return only the cleaned text: \n\n${preScrubbed}`
-              }
-            ]
+            content: `You are a PII scrubbing and text cleanup assistant. Clean, format, and redact any remaining personally identifiable information (PII) such as specific physical addresses, government IDs, and financial information from the text below. Make it professional and clean while preserving the core message. Return only the cleaned text: \n\n${preScrubbed}`
           }
         ]
       });
 
-      return response.text?.trim() || preScrubbed;
+      return response.choices[0]?.message?.content?.trim() || preScrubbed;
     } catch (error) {
-      console.error('Error calling Gemini for text cleanup:', error);
+      console.error('Error calling Groq for text cleanup:', error);
       return preScrubbed; // Fallback to local scrubbed version if API fails
     }
   }
@@ -71,14 +67,29 @@ export class GeminiService {
   ): Promise<string> {
     try {
       const activeSystemPrompt = systemPrompt || 
-        'You are an agentic maritime representative. Answer the query using the reference maritime data provided. If the answer cannot be found in the context, look it up online using Google Search.';
+        'You are an agentic maritime representative. Answer the query using the reference maritime data provided.';
+
+      // Compile any PDF attachments into text and append them to referenceContext
+      let parsedPdfContext = '';
+      for (const pdf of pdfAttachments) {
+        try {
+          const parsed = await pdfParse(pdf.data);
+          if (parsed?.text) {
+            parsedPdfContext += `\n\n--- Attached PDF Content ---\n${parsed.text}\n`;
+          }
+        } catch (pdfErr) {
+          console.error('Failed to parse PDF attachment with pdf-parse:', (pdfErr as Error).message);
+        }
+      }
+
+      const fullReferenceContext = `${referenceContext}${parsedPdfContext}`;
 
       // Build a clearly structured user message that explicitly directs the AI
       // on how to prioritize vessel settings and uploaded company documents
       const userMessage = `
 === MANDATORY GROUNDING CONTEXT (READ AND APPLY BEFORE RESPONDING) ===
 
-${referenceContext}
+${fullReferenceContext}
 
 === END OF GROUNDING CONTEXT ===
 
@@ -96,39 +107,26 @@ INSTRUCTIONS FOR USING THE ABOVE CONTEXT:
 ${query}
 `.trim();
 
-      const parts: any[] = [{ text: userMessage }];
-
-      // Add PDF files directly as inlineData contents
-      for (const pdf of pdfAttachments) {
-        parts.push({
-          inlineData: {
-            data: pdf.data.toString('base64'),
-            mimeType: pdf.mimeType
-          }
-        });
-      }
-
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-3.5-flash',
-        contents: [
+      const response = await this.groq.chat.completions.create({
+        model: 'llama-3.1-8b-instant',
+        messages: [
+          {
+            role: 'system',
+            content: activeSystemPrompt
+          },
           {
             role: 'user',
-            parts: parts
+            content: userMessage
           }
-        ],
-        config: {
-          systemInstruction: activeSystemPrompt,
-          tools: [{ googleSearch: {} }]
-        }
+        ]
       });
 
-      return response.text?.trim() || 'No response generated.';
+      return response.choices[0]?.message?.content?.trim() || 'No response generated.';
     } catch (error) {
-      console.error('Error calling Gemini for grounded query:', error);
-      throw new Error(`Failed to process query with Gemini grounding: ${(error as Error).message}`);
+      console.error('Error calling Groq for grounded query:', error);
+      throw new Error(`Failed to process query with Groq grounding: ${(error as Error).message}`);
     }
   }
-
 
   /**
    * Layer 2 — Fuzzy keyword match against analyst-defined agent keywords.
@@ -214,14 +212,12 @@ ${query}
         return parts.join(', ');
       }).join('\n');
 
-      const response = await this.ai.models.generateContent({
-        model: 'gemini-3.5-flash',
-        contents: [
+      const response = await this.groq.chat.completions.create({
+        model: 'llama-3.1-8b-instant',
+        messages: [
           {
             role: 'user',
-            parts: [
-              {
-                text: `You are a maritime email routing agent. Classify the incoming maritime inquiry into the single best matching agent.
+            content: `You are a maritime email routing agent. Classify the incoming maritime inquiry into the single best matching agent.
 
 IMPORTANT RULES:
 - You MUST return ONLY the exact Agent UUID — nothing else
@@ -234,16 +230,14 @@ ${agentsListString}
 
 Incoming Maritime Inquiry:
 ${query}`
-              }
-            ]
           }
         ]
       });
 
-      const matchedId = response.text?.trim() || '';
+      const matchedId = response.choices[0]?.message?.content?.trim() || '';
       return matchedId.replace(/['"` \n\r]/g, '');
     } catch (error) {
-      console.error('Error classifying query with Gemini:', error);
+      console.error('Error classifying query with Groq:', error);
       return agents[0].id;
     }
   }
