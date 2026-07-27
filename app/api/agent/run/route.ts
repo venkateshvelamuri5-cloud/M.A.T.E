@@ -162,8 +162,8 @@ export async function POST(req: NextRequest) {
               file.name.toLowerCase().includes(kw)
             );
 
-            // Skip personal workspace files if name does not match keywords to prevent unnecessary downloads and context bloat
-            if (!isKnowledgeBase && !isExplicitSelection && !nameMatchesKeywords) {
+            // Skip personal workspace files if name does not match and size is > 2MB (too large to scan dynamically)
+            if (!isKnowledgeBase && !isExplicitSelection && !nameMatchesKeywords && (file.file_size_mb || 0) > 2.0) {
               continue;
             }
 
@@ -207,7 +207,26 @@ export async function POST(req: NextRequest) {
                });
                fileReferenceContext += `\n\n--- Document: ${file.name} (Attached PDF) ---\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n`;
              } else {
-               const cleanedText = FileProcessor.cleanToMarkdown(fileTextContent, file.name);
+               let textToInclude = fileTextContent;
+               
+               // For personal workspace files that were not explicitly selected:
+               if (!isKnowledgeBase && !isExplicitSelection) {
+                 // Check if keywords actually match the text content
+                 const contentMatchesKeywords = keywords.length === 0 || keywords.some(kw => 
+                   fileTextContent.toLowerCase().includes(kw)
+                 );
+                 
+                 if (!nameMatchesKeywords && !contentMatchesKeywords) {
+                   continue; // Skip file entirely if no keyword matches name or text content
+                 }
+
+                 // Extract matching paragraphs for large files to optimize context size
+                 if (fileTextContent.length > 15000) {
+                   textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
+                 }
+               }
+
+               const cleanedText = FileProcessor.cleanToMarkdown(textToInclude, file.name);
                if (cleanedText) {
                  fileReferenceContext += `\n\n--- Document: ${file.name} ---\n${cleanedText}\n`;
                }

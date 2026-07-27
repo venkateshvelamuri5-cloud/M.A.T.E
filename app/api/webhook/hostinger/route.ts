@@ -618,8 +618,8 @@ export async function POST(req: NextRequest) {
               fileRef.name.toLowerCase().includes(kw)
             );
 
-            // Skip personal workspace files if name does not match keywords to prevent unnecessary storage downloads and context bloat
-            if (isUserPersonalFile && !nameMatchesKeywords) {
+            // Skip personal workspace files if name does not match and size is > 2MB (too large to scan dynamically)
+            if (isUserPersonalFile && !nameMatchesKeywords && (fileRef.file_size_mb || 0) > 2.0) {
               continue;
             }
 
@@ -661,7 +661,26 @@ export async function POST(req: NextRequest) {
             }
 
             if (fileTextContent) {
-              const cleanedText = FileProcessor.cleanToMarkdown(fileTextContent, fileRef.name);
+              let textToInclude = fileTextContent;
+
+              // For personal workspace files:
+              if (isUserPersonalFile) {
+                // Check if keywords actually match the text content
+                const contentMatchesKeywords = keywords.length === 0 || keywords.some(kw => 
+                  fileTextContent.toLowerCase().includes(kw)
+                );
+                
+                if (!nameMatchesKeywords && !contentMatchesKeywords) {
+                  continue; // Skip file entirely if no keyword matches name or text content
+                }
+
+                // Extract matching paragraphs for large files to optimize context size
+                if (fileTextContent.length > 15000) {
+                  textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
+                }
+              }
+
+              const cleanedText = FileProcessor.cleanToMarkdown(textToInclude, fileRef.name);
               if (cleanedText) {
                 fileReferenceContext += `\n\n--- Document: ${fileRef.name} ---\n${cleanedText}\n`;
               }

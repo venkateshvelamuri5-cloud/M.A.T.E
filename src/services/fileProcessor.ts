@@ -71,4 +71,34 @@ export class FileProcessor {
     }
     return hash.toString(36);
   }
+
+  /**
+   * Extracts only the paragraphs containing the keywords and their immediate surrounding context (preceding/succeeding paragraphs)
+   * to implement lightweight paragraph-level RAG.
+   */
+  public static extractRelevantChunks(text: string, keywords: string[]): string {
+    if (!text) return '';
+    if (!keywords || keywords.length === 0) return text;
+
+    const paragraphs = text.split(/\n\n+/);
+    const matchedIndices = new Set<number>();
+
+    for (let i = 0; i < paragraphs.length; i++) {
+      const p = paragraphs[i].toLowerCase();
+      if (keywords.some(kw => p.includes(kw))) {
+        matchedIndices.add(i);
+        // Add 1 paragraph of surrounding context for readability
+        if (i > 0) matchedIndices.add(i - 1);
+        if (i < paragraphs.length - 1) matchedIndices.add(i + 1);
+      }
+    }
+
+    if (matchedIndices.size === 0) {
+      return '';
+    }
+
+    // Sort indices and build continuous blocks of text
+    const sortedIndices = Array.from(matchedIndices).sort((a, b) => a - b);
+    return sortedIndices.map(idx => paragraphs[idx].trim()).join('\n\n');
+  }
 }

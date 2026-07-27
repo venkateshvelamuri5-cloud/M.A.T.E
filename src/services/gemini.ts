@@ -69,13 +69,28 @@ export class GeminiService {
       const activeSystemPrompt = systemPrompt || 
         'You are an agentic maritime representative. Answer the query using the reference maritime data provided.';
 
+      // Extract keywords from query for paragraph pre-filtering
+      const stopWords = new Set(['what', 'make', 'vessel', 'please', 'with', 'from', 'about', 'need', 'have', 'does', 'show', 'your', 'were', 'that', 'this', 'there', 'their', 'only', 'also', 'include', 'report', 'send', 'query', 'task', 'run', 'agent']);
+      const keywords = query
+        .toLowerCase()
+        .replace(/[^\w\s]/g, ' ')
+        .split(/\s+/)
+        .filter(word => word.length > 3 && !stopWords.has(word));
+
       // Compile any PDF attachments into text and append them to referenceContext
       let parsedPdfContext = '';
       for (const pdf of pdfAttachments) {
         try {
           const parsed = await pdfParse(pdf.data);
           if (parsed?.text) {
-            parsedPdfContext += `\n\n--- Attached PDF Content ---\n${parsed.text}\n`;
+            let textToInclude = parsed.text;
+            if (textToInclude.length > 15000) {
+              const { FileProcessor } = require('./fileProcessor');
+              textToInclude = FileProcessor.extractRelevantChunks(textToInclude, keywords);
+            }
+            if (textToInclude) {
+              parsedPdfContext += `\n\n--- Attached PDF Content ---\n${textToInclude}\n`;
+            }
           }
         } catch (pdfErr) {
           console.error('Failed to parse PDF attachment with pdf-parse:', (pdfErr as Error).message);
