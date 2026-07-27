@@ -156,63 +156,64 @@ export async function POST(req: NextRequest) {
 
     if (files && files.length > 0) {
       for (const file of files) {
-           const bucketName = (file.agent_id || file.user_id === '00000000-0000-0000-0000-000000000000' || file.file_type === 'knowledge_base')
-             ? 'knowledge-base'
-             : 'user-spaces';
-
-           const { data: fileBlob, error: downloadErr } = await supabase.storage
-              .from(bucketName)
-              .download(file.storage_path);
-
-           if (downloadErr) {
-             console.error(`[STORAGE DOWNLOAD ERROR] Failed to download "${file.name}" from bucket "${bucketName}":`, downloadErr.message || downloadErr);
-           }
-
-           if (fileBlob) {
-            let fileExt = (file.file_type || '').toLowerCase();
-            if (fileExt === 'knowledge_base' && file.name.includes('.')) {
-              fileExt = file.name.substring(file.name.lastIndexOf('.') + 1).toLowerCase();
-            }
-            let fileTextContent = '';
-            
-            if (fileExt === 'txt' || fileExt === 'md' || fileExt === 'rtf') {
-              fileTextContent = await fileBlob.text();
-            } else if (fileExt === 'docx') {
-              const arrayBuffer = await fileBlob.arrayBuffer();
-              try {
-                const mammoth = require('mammoth');
-                const result = await mammoth.extractRawText({ buffer: Buffer.from(arrayBuffer) });
-                fileTextContent = result.value;
-              } catch (docxErr) {
-                console.error(`Error reading docx context for ${file.name}:`, docxErr);
-              }
-            }
-
-            // Knowledge base files (analyst-uploaded company manuals) are ALWAYS included.
-            // Keyword filtering only applies to the user's own workspace files.
             const isKnowledgeBase = file.file_type === 'knowledge_base';
             const isExplicitSelection = selectedFileIds !== undefined;
-            const matchesKeywords = keywords.length === 0 || keywords.some(kw => 
-              file.name.toLowerCase().includes(kw) || fileTextContent.toLowerCase().includes(kw)
+            const nameMatchesKeywords = keywords.length === 0 || keywords.some(kw => 
+              file.name.toLowerCase().includes(kw)
             );
 
-            if (isKnowledgeBase || isExplicitSelection || matchesKeywords) {
-              if (fileExt === 'pdf') {
-                const arrayBuffer = await fileBlob.arrayBuffer();
-                pdfAttachments.push({
-                  data: Buffer.from(arrayBuffer),
-                  mimeType: 'application/pdf'
-                });
-                fileReferenceContext += `\n\n--- Document: ${file.name} (Attached PDF) ---\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n`;
-              } else {
-                const cleanedText = FileProcessor.cleanToMarkdown(fileTextContent, file.name);
-                if (cleanedText) {
-                  fileReferenceContext += `\n\n--- Document: ${file.name} ---\n${cleanedText}\n`;
-                }
-              }
+            // Skip personal workspace files if name does not match keywords to prevent unnecessary downloads and context bloat
+            if (!isKnowledgeBase && !isExplicitSelection && !nameMatchesKeywords) {
+              continue;
+            }
+
+            const bucketName = (file.agent_id || file.user_id === '00000000-0000-0000-0000-000000000000' || file.file_type === 'knowledge_base')
+              ? 'knowledge-base'
+              : 'user-spaces';
+
+            const { data: fileBlob, error: downloadErr } = await supabase.storage
+               .from(bucketName)
+               .download(file.storage_path);
+
+            if (downloadErr) {
+              console.error(`[STORAGE DOWNLOAD ERROR] Failed to download "${file.name}" from bucket "${bucketName}":`, downloadErr.message || downloadErr);
+            }
+
+            if (fileBlob) {
+             let fileExt = (file.file_type || '').toLowerCase();
+             if (fileExt === 'knowledge_base' && file.name.includes('.')) {
+               fileExt = file.name.substring(file.name.lastIndexOf('.') + 1).toLowerCase();
+             }
+             let fileTextContent = '';
+             
+             if (fileExt === 'txt' || fileExt === 'md' || fileExt === 'rtf') {
+               fileTextContent = await fileBlob.text();
+             } else if (fileExt === 'docx') {
+               const arrayBuffer = await fileBlob.arrayBuffer();
+               try {
+                 const mammoth = require('mammoth');
+                 const result = await mammoth.extractRawText({ buffer: Buffer.from(arrayBuffer) });
+                 fileTextContent = result.value;
+               } catch (docxErr) {
+                 console.error(`Error reading docx context for ${file.name}:`, docxErr);
+               }
+             }
+
+             if (fileExt === 'pdf') {
+               const arrayBuffer = await fileBlob.arrayBuffer();
+               pdfAttachments.push({
+                 data: Buffer.from(arrayBuffer),
+                 mimeType: 'application/pdf'
+               });
+               fileReferenceContext += `\n\n--- Document: ${file.name} (Attached PDF) ---\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n`;
+             } else {
+               const cleanedText = FileProcessor.cleanToMarkdown(fileTextContent, file.name);
+               if (cleanedText) {
+                 fileReferenceContext += `\n\n--- Document: ${file.name} ---\n${cleanedText}\n`;
+               }
+             }
             }
           }
-        }
       }
 
     // 5. Ingest profile metadata directly into grounding prompt to personalize output

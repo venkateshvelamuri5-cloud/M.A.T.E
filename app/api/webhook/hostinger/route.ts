@@ -618,8 +618,8 @@ export async function POST(req: NextRequest) {
               fileRef.name.toLowerCase().includes(kw)
             );
 
-            // Skip personal PDF if name does not match keywords to prevent unnecessary storage downloads
-            if (isUserPersonalFile && fileExt === 'pdf' && !nameMatchesKeywords) {
+            // Skip personal workspace files if name does not match keywords to prevent unnecessary storage downloads and context bloat
+            if (isUserPersonalFile && !nameMatchesKeywords) {
               continue;
             }
 
@@ -658,16 +658,6 @@ export async function POST(req: NextRequest) {
               });
               fileReferenceContext += `\n\n--- Document: ${fileRef.name} (Attached PDF) ---\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n`;
               continue;
-            }
-
-            // For personal text/docx files, verify keywords match either the name or content
-            if (isUserPersonalFile) {
-              const textMatchesKeywords = keywords.length === 0 || keywords.some(kw => 
-                fileTextContent.toLowerCase().includes(kw)
-              );
-              if (!nameMatchesKeywords && !textMatchesKeywords) {
-                continue;
-              }
             }
 
             if (fileTextContent) {
