@@ -224,6 +224,13 @@ export async function POST(req: NextRequest) {
                  if (fileTextContent.length > 15000) {
                    textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
                  }
+               } else {
+                 // Even if explicitly selected or a knowledge base file, if it is extremely large (> 400k characters / ~100k tokens),
+                 // we must extract matching chunks to prevent exceeding Groq's 128k context window limit.
+                 if (fileTextContent.length > 400000) {
+                   console.log(`[Groq Safety Guard] Large file "${file.name}" of size ${fileTextContent.length} chars matches. Chunking...`);
+                   textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
+                 }
                }
 
                const cleanedText = FileProcessor.cleanToMarkdown(textToInclude, file.name);

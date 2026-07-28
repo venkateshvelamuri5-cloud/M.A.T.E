@@ -678,6 +678,12 @@ export async function POST(req: NextRequest) {
                 if (fileTextContent.length > 15000) {
                   textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
                 }
+              } else {
+                // For global knowledge base manuals, if they exceed 400k characters, chunk them to prevent Groq crashes.
+                if (fileTextContent.length > 400000) {
+                  console.log(`[Groq Safety Guard] Large KB file "${fileRef.name}" of size ${fileTextContent.length} chars. Chunking...`);
+                  textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
+                }
               }
 
               const cleanedText = FileProcessor.cleanToMarkdown(textToInclude, fileRef.name);
