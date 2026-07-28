@@ -208,9 +208,9 @@ export async function POST(req: NextRequest) {
                fileReferenceContext += `\n\n--- Document: ${file.name} (Attached PDF) ---\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n`;
              } else {
                let textToInclude = fileTextContent;
-               
-               // For personal workspace files that were not explicitly selected:
-               if (!isKnowledgeBase && !isExplicitSelection) {
+
+               // For files that were not explicitly selected (both personal and knowledge base files):
+               if (!isExplicitSelection) {
                  // Check if keywords actually match the text content
                  const contentMatchesKeywords = keywords.length === 0 || keywords.some(kw => 
                    fileTextContent.toLowerCase().includes(kw)
@@ -225,7 +225,7 @@ export async function POST(req: NextRequest) {
                    textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
                  }
                } else {
-                 // Even if explicitly selected or a knowledge base file, if it is extremely large (> 400k characters / ~100k tokens),
+                 // Even if explicitly selected, if it is extremely large (> 400k characters / ~100k tokens),
                  // we must extract matching chunks to prevent exceeding Groq's 128k context window limit.
                  if (fileTextContent.length > 400000) {
                    console.log(`[Groq Safety Guard] Large file "${file.name}" of size ${fileTextContent.length} chars matches. Chunking...`);
