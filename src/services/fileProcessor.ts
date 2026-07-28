@@ -103,9 +103,9 @@ export class FileProcessor {
       return '';
     }
 
-    // 2. Sort paragraphs by score descending and take the top 15 most relevant paragraphs
+    // 2. Sort paragraphs by score descending and take the top 5 most relevant paragraphs
     scoredParagraphs.sort((a, b) => b.score - a.score);
-    const topParagraphs = scoredParagraphs.slice(0, 15);
+    const topParagraphs = scoredParagraphs.slice(0, 5);
 
     // 3. Collect indices and include 1 paragraph of surrounding context for readability
     const matchedIndices = new Set<number>();
