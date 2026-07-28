@@ -81,23 +81,41 @@ export class FileProcessor {
     if (!keywords || keywords.length === 0) return text;
 
     const paragraphs = text.split(/\n\n+/);
-    const matchedIndices = new Set<number>();
+    const scoredParagraphs: Array<{ index: number; score: number }> = [];
 
+    // 1. Score each paragraph based on keyword term frequency (TF)
     for (let i = 0; i < paragraphs.length; i++) {
       const p = paragraphs[i].toLowerCase();
-      if (keywords.some(kw => p.includes(kw))) {
-        matchedIndices.add(i);
-        // Add 1 paragraph of surrounding context for readability
-        if (i > 0) matchedIndices.add(i - 1);
-        if (i < paragraphs.length - 1) matchedIndices.add(i + 1);
+      let score = 0;
+      for (const kw of keywords) {
+        if (p.includes(kw)) {
+          // Count keyword occurrences in the paragraph
+          const occurrences = p.split(kw).length - 1;
+          score += occurrences;
+        }
+      }
+      if (score > 0) {
+        scoredParagraphs.push({ index: i, score });
       }
     }
 
-    if (matchedIndices.size === 0) {
+    if (scoredParagraphs.length === 0) {
       return '';
     }
 
-    // Sort indices and build continuous blocks of text
+    // 2. Sort paragraphs by score descending and take the top 15 most relevant paragraphs
+    scoredParagraphs.sort((a, b) => b.score - a.score);
+    const topParagraphs = scoredParagraphs.slice(0, 15);
+
+    // 3. Collect indices and include 1 paragraph of surrounding context for readability
+    const matchedIndices = new Set<number>();
+    for (const item of topParagraphs) {
+      matchedIndices.add(item.index);
+      if (item.index > 0) matchedIndices.add(item.index - 1);
+      if (item.index < paragraphs.length - 1) matchedIndices.add(item.index + 1);
+    }
+
+    // 4. Sort indices to print matched segments in their original document chronological order
     const sortedIndices = Array.from(matchedIndices).sort((a, b) => a - b);
     return sortedIndices.map(idx => paragraphs[idx].trim()).join('\n\n');
   }
