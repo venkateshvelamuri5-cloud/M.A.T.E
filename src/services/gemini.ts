@@ -122,13 +122,8 @@ INSTRUCTIONS FOR USING THE ABOVE CONTEXT:
 ${query}
 `.trim();
 
-      // Estimate input token size to route dynamically and prevent 429 rate limits
-      // Average 1 token = ~3.5 characters. Let's use a safe margin of 5,500 tokens.
-      const totalChars = activeSystemPrompt.length + userMessage.length;
-      const estimatedTokens = Math.ceil(totalChars / 3.5);
-      
-      const targetModel = estimatedTokens <= 5500 ? 'llama-3.1-8b-instant' : 'llama-3.3-70b-versatile';
-      console.log(`[Groq Router] Estimated input: ${estimatedTokens} tokens. Routing to: ${targetModel}`);
+      const targetModel = 'llama-3.3-70b-versatile';
+      console.log(`[Groq Router] Grounding query using model: ${targetModel}`);
 
       const response = await this.groq.chat.completions.create({
         model: targetModel,
