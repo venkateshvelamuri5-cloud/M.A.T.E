@@ -89,6 +89,11 @@ export class GeminiService {
               textToInclude = FileProcessor.extractRelevantChunks(textToInclude, keywords);
             }
             if (textToInclude) {
+              // Hard safety budget: stop adding PDFs if the total context would exceed 20,000 characters (~5,000 tokens)
+              if (referenceContext.length + parsedPdfContext.length + textToInclude.length > 20000) {
+                console.log(`[Groq Safety Cap] PDF context limit reached (20k chars). Skipping remaining PDFs.`);
+                break;
+              }
               parsedPdfContext += `\n\n--- Attached PDF Content ---\n${textToInclude}\n`;
             }
           }

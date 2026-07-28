@@ -688,6 +688,11 @@ export async function POST(req: NextRequest) {
 
               const cleanedText = FileProcessor.cleanToMarkdown(textToInclude, fileRef.name);
               if (cleanedText) {
+                // Hard safety budget: stop adding more files if the total context would exceed 20,000 characters (~5,000 tokens)
+                if (fileReferenceContext.length + cleanedText.length > 20000) {
+                  console.log(`[Groq Safety Cap] Total context limit reached (20k chars). Skipping remaining files.`);
+                  break;
+                }
                 fileReferenceContext += `\n\n--- Document: ${fileRef.name} ---\n${cleanedText}\n`;
               }
             }
