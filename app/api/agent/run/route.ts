@@ -162,10 +162,7 @@ export async function POST(req: NextRequest) {
               file.name.toLowerCase().includes(kw)
             );
 
-            // Skip personal workspace files if name does not match and size is > 2MB (too large to scan dynamically)
-            if (!isKnowledgeBase && !isExplicitSelection && !nameMatchesKeywords && (file.file_size_mb || 0) > 2.0) {
-              continue;
-            }
+            // Download all candidate files so that their text content can be dynamically scanned for keywords.
 
             const bucketName = (file.agent_id || file.user_id === '00000000-0000-0000-0000-000000000000' || file.file_type === 'knowledge_base')
               ? 'knowledge-base'
@@ -302,22 +299,6 @@ Mariner Profile:
     
     const runCost = ((inputTokens * inputPricePerM) / 1000000) + ((outputTokens * outputPricePerM) / 1000000);
 
-    const activeServiceKey = 
-      process.env.SUPABASE_SERVICE_ROLE_KEY || 
-      process.env.SUPABASE_SERVICE_KEY || 
-      process.env.SUPABASE_SECRET_KEY || 
-      process.env.SUPABASE_ADMIN_KEY || 
-      process.env.SERVICE_ROLE_KEY;
-
-    let keyNameUsed = 'none';
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) keyNameUsed = 'SUPABASE_SERVICE_ROLE_KEY';
-    else if (process.env.SUPABASE_SERVICE_KEY) keyNameUsed = 'SUPABASE_SERVICE_KEY';
-    else if (process.env.SUPABASE_SECRET_KEY) keyNameUsed = 'SUPABASE_SECRET_KEY';
-    else if (process.env.SUPABASE_ADMIN_KEY) keyNameUsed = 'SUPABASE_ADMIN_KEY';
-    else if (process.env.SERVICE_ROLE_KEY) keyNameUsed = 'SERVICE_ROLE_KEY';
-
-    const diagnosticsStr = `=== DIAGNOSTICS ===\nKey Name Used: ${keyNameUsed}\nKey Found: ${!!activeServiceKey}\nKey Length: ${activeServiceKey ? activeServiceKey.length : 0}\nIs Server Side: ${typeof window === 'undefined'}`;
-
     await supabase
       .from('interactions_log')
       .insert({
@@ -326,7 +307,7 @@ Mariner Profile:
         status: 'Completed',
         agent_id: agentId,
         email_request: queryInput,
-        email_response: processedResult + "\n\n" + diagnosticsStr,
+        email_response: processedResult,
         input_tokens: inputTokens,
         output_tokens: outputTokens,
         run_cost: parseFloat(runCost.toFixed(6)),
@@ -350,13 +331,7 @@ Mariner Profile:
     return NextResponse.json({
       success: true,
       result: processedResult,
-      interactionsLimit: `${limitCount + 1} / ${limitMax}`,
-      _diagnostics: {
-        hasServiceRoleKey: !!activeServiceKey,
-        serviceRoleKeyLength: activeServiceKey ? activeServiceKey.length : 0,
-        keyNameUsed,
-        isServerSide: typeof window === 'undefined'
-      }
+      interactionsLimit: `${limitCount + 1} / ${limitMax}`
     });
 
   } catch (error) {

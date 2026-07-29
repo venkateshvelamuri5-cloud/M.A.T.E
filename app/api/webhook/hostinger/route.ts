@@ -619,10 +619,7 @@ export async function POST(req: NextRequest) {
               fileRef.name.toLowerCase().includes(kw)
             );
 
-            // Skip personal workspace files if name does not match and size is > 2MB (too large to scan dynamically)
-            if (isUserPersonalFile && !nameMatchesKeywords && (fileRef.file_size_mb || 0) > 2.0) {
-              continue;
-            }
+            // Download all candidate files so that their text content can be dynamically scanned for keywords.
 
             // Determine storage bucket: user space vs knowledge base
             const bucketName = (fileRef.agent_id || fileRef.user_id === '00000000-0000-0000-0000-000000000000' || fileRef.file_type === 'knowledge_base')
