@@ -62,7 +62,7 @@ export class GeminiService {
   async runGroundedQuery(
     query: string, 
     referenceContext: string,
-    pdfAttachments: Array<{ data: Buffer; mimeType: string }> = [],
+    pdfAttachments: Array<{ data: Buffer; mimeType: string; name?: string }> = [],
     systemPrompt?: string
   ): Promise<string> {
     try {
@@ -89,12 +89,14 @@ export class GeminiService {
               textToInclude = FileProcessor.extractRelevantChunks(textToInclude, keywords);
             }
             if (textToInclude) {
+              const formattedDocContext = `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${pdf.name || 'Attached PDF Document'}\nClassification: Attached User Document (Reference)\n\nRelevant Excerpts:\n"""\n${textToInclude}\n"""\n==========================\n`;
+
               // Hard safety budget: stop adding PDFs if the total context would exceed 20,000 characters (~5,000 tokens)
-              if (referenceContext.length + parsedPdfContext.length + textToInclude.length > 20000) {
+              if (referenceContext.length + parsedPdfContext.length + formattedDocContext.length > 20000) {
                 console.log(`[Groq Safety Cap] PDF context limit reached (20k chars). Skipping remaining PDFs.`);
                 break;
               }
-              parsedPdfContext += `\n\n--- Attached PDF Content ---\n${textToInclude}\n`;
+              parsedPdfContext += formattedDocContext;
             }
           }
         } catch (pdfErr) {
@@ -116,12 +118,13 @@ ${fullReferenceContext}
 INSTRUCTIONS FOR USING THE ABOVE CONTEXT:
 1. VESSEL SETTINGS: The "Vessel Particulars & Systems" and "Mariner Profile" sections above define this user's specific vessel configuration. You MUST tailor your entire response to this vessel. Do NOT reference equipment, systems, or cargo types that are marked as not applicable (e.g., if Bow Thruster is "Not fitted", do not mention bow thruster operations).
 
-2. COMPANY MANUALS / UPLOADED DOCUMENTS: If any documents are listed above under "--- Document: [filename] ---", treat them as the PRIMARY reference and FORMAT AUTHORITY.
+2. COMPANY MANUALS / UPLOADED DOCUMENTS: If any documents are listed above under "=== GROUNDING DOCUMENT ===" with a "Filename", treat them as the PRIMARY reference and FORMAT AUTHORITY.
    - If a document contains a template or structured format, FOLLOW THAT FORMAT for your response.
-   - If a document contains company-specific procedures, CITE them in your response using the document name and relevant section/requirement.
    - If no document is present, use the format defined in your system directive.
 
 3. PRIORITY ORDER: Company Manual > Vessel Settings > Your General Maritime Knowledge.
+
+4. CITATIONS: You MUST explicitly cite the filenames (e.g. "[02 - SMP.pdf]") in your response whenever you mention guidelines, instructions, or rules sourced from that document. Cite them inline at the end of the sentence or block where they are used.
 
 === USER QUERY ===
 ${query}

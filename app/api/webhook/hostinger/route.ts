@@ -383,7 +383,7 @@ export async function POST(req: NextRequest) {
 
     let processedResult = scrubbedText;
     let fileReferenceContext = '';
-    const pdfAttachments: Array<{ data: Buffer; mimeType: string }> = [];
+    const pdfAttachments: Array<{ data: Buffer; mimeType: string; name?: string }> = [];
 
     // Fetch dynamic system prompts and route to correct agent
     let selectedAgentPrompt = 'You are an agentic maritime representative. Answer the query using the reference maritime data and user documents provided.';
@@ -549,15 +549,16 @@ export async function POST(req: NextRequest) {
             } else if (fileExt === 'pdf') {
               pdfAttachments.push({
                 data: fileBuffer,
-                mimeType: 'application/pdf'
+                mimeType: 'application/pdf',
+                name: filename
               });
-              fileReferenceContext += `\n\n--- Document: ${filename} (Attached PDF) ---\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n`;
+              fileReferenceContext += `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${filename}\nClassification: Attached PDF Document (Reference)\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n==========================\n`;
             }
 
             if (fileTextContent) {
               const cleanedText = FileProcessor.cleanToMarkdown(fileTextContent, filename);
               if (cleanedText) {
-                fileReferenceContext += `\n\n--- Document: ${filename} ---\n${cleanedText}\n`;
+                fileReferenceContext += `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${filename}\nClassification: Attached User Document (Reference)\n\nRelevant Excerpts:\n"""\n${cleanedText}\n"""\n==========================\n`;
               }
             }
           }
@@ -654,9 +655,10 @@ export async function POST(req: NextRequest) {
               const arrayBuffer = await fileBlob.arrayBuffer();
               pdfAttachments.push({
                 data: Buffer.from(arrayBuffer),
-                mimeType: 'application/pdf'
+                mimeType: 'application/pdf',
+                name: fileRef.name
               });
-              fileReferenceContext += `\n\n--- Document: ${fileRef.name} (Attached PDF) ---\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n`;
+              fileReferenceContext += `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${fileRef.name}\nClassification: Attached PDF Document (Reference)\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n==========================\n`;
               continue;
             }
 
@@ -688,12 +690,15 @@ export async function POST(req: NextRequest) {
 
               const cleanedText = FileProcessor.cleanToMarkdown(textToInclude, fileRef.name);
               if (cleanedText) {
+                const docClassification = (fileRef.file_type === 'knowledge_base') ? 'Company Manual / Policy (Primary Authority)' : 'User Workspace Document';
+                const formattedDocContext = `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${fileRef.name}\nClassification: ${docClassification}\n\nRelevant Excerpts:\n"""\n${cleanedText}\n"""\n==========================\n`;
+
                 // Hard safety budget: stop adding more files if the total context would exceed 20,000 characters (~5,000 tokens)
-                if (fileReferenceContext.length + cleanedText.length > 20000) {
+                if (fileReferenceContext.length + formattedDocContext.length > 20000) {
                   console.log(`[Groq Safety Cap] Total context limit reached (20k chars). Skipping remaining files.`);
                   break;
                 }
-                fileReferenceContext += `\n\n--- Document: ${fileRef.name} ---\n${cleanedText}\n`;
+                fileReferenceContext += formattedDocContext;
               }
             }
           }

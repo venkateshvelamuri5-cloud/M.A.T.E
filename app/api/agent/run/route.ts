@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
 
     // 4. Construct context from selected workspace files
     let fileReferenceContext = '';
-    const pdfAttachments: Array<{ data: Buffer; mimeType: string }> = [];
+    const pdfAttachments: Array<{ data: Buffer; mimeType: string; name?: string }> = [];
     FileProcessor.resetCache();
 
     // Extract keywords for Strategy 2 (Lightweight RAG filtering)
@@ -203,9 +203,10 @@ export async function POST(req: NextRequest) {
                const arrayBuffer = await fileBlob.arrayBuffer();
                pdfAttachments.push({
                  data: Buffer.from(arrayBuffer),
-                 mimeType: 'application/pdf'
+                 mimeType: 'application/pdf',
+                 name: file.name
                });
-               fileReferenceContext += `\n\n--- Document: ${file.name} (Attached PDF) ---\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n`;
+               fileReferenceContext += `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${file.name}\nClassification: Attached PDF Document (Reference)\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n==========================\n`;
              } else {
                let textToInclude = fileTextContent;
 
@@ -235,12 +236,15 @@ export async function POST(req: NextRequest) {
 
                const cleanedText = FileProcessor.cleanToMarkdown(textToInclude, file.name);
                if (cleanedText) {
+                 const docClassification = isKnowledgeBase ? 'Company Manual / Policy (Primary Authority)' : 'User Workspace Document';
+                 const formattedDocContext = `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${file.name}\nClassification: ${docClassification}\n\nRelevant Excerpts:\n"""\n${cleanedText}\n"""\n==========================\n`;
+
                  // Hard safety budget: stop adding more files if the total context would exceed 20,000 characters (~5,000 tokens)
-                 if (fileReferenceContext.length + cleanedText.length > 20000) {
+                 if (fileReferenceContext.length + formattedDocContext.length > 20000) {
                    console.log(`[Groq Safety Cap] Total context limit reached (20k chars). Skipping remaining files.`);
                    break;
                  }
-                 fileReferenceContext += `\n\n--- Document: ${file.name} ---\n${cleanedText}\n`;
+                 fileReferenceContext += formattedDocContext;
                }
              }
             }
