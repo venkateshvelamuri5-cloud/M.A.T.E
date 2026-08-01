@@ -143,7 +143,7 @@ ${query}
       console.log(`[LLM Router] Grounding query using engine provider: ${normalizedProvider}`);
 
       if (normalizedProvider === 'gemini') {
-        const geminiModel = 'gemini-1.5-pro';
+        const geminiModel = 'gemini-3.1-pro-preview';
         console.log(`[LLM Router] Routing to Gemini model: ${geminiModel}`);
         const response = await this.ai.models.generateContent({
           model: geminiModel,
