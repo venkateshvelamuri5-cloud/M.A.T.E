@@ -389,11 +389,12 @@ export async function POST(req: NextRequest) {
     let selectedAgentPrompt = 'You are an agentic maritime representative. Answer the query using the reference maritime data and user documents provided.';
     let agentConfigSendAttachment = false;
     let routingLayer = 'fallback';
+    let selectedAgentLlmProvider = 'groq';
 
     try {
       const { data: dbAgents } = await supabase
         .from('agents')
-        .select('id, name, description, system_prompt, send_attachment, slot_code, keywords');
+        .select('id, name, description, system_prompt, send_attachment, slot_code, keywords, llm_provider');
 
       if (dbAgents && dbAgents.length > 0) {
 
@@ -439,7 +440,8 @@ export async function POST(req: NextRequest) {
           selectedAgentPrompt = matchedAgent.system_prompt;
           selectedAgentId = matchedAgent.id;
           agentConfigSendAttachment = matchedAgent.send_attachment || false;
-          console.log(`[ROUTING] Final: Agent "${matchedAgent.name}" via ${routingLayer}`);
+          selectedAgentLlmProvider = matchedAgent.llm_provider || 'groq';
+          console.log(`[ROUTING] Final: Agent "${matchedAgent.name}" via ${routingLayer} (Engine: ${selectedAgentLlmProvider})`);
         }
       }
     } catch (agentErr) {
@@ -727,7 +729,8 @@ Mariner Profile:
         scrubbedText, 
         `${marinerProfilePrompt}\n\n${fileReferenceContext}`,
         pdfAttachments,
-        selectedAgentPrompt
+        selectedAgentPrompt,
+        selectedAgentLlmProvider
       );
 
       if (processedResult) {

@@ -1,20 +1,28 @@
 import Groq from 'groq-sdk';
+import { GoogleGenAI } from '@google/genai';
 import pdfParse from 'pdf-parse';
 
 /**
  * Gemini Service Class
- * Integrates Groq SDK to clean text, scrub PII, and handle search grounding using Llama 3.1 8B.
+ * Integrates multiple LLM providers (Groq Llama 3.3, Google Gemini, OpenAI, Claude, Perplexity)
+ * to clean text, scrub PII, and run grounded maritime inquiries.
  */
 export class GeminiService {
   private groq: Groq;
+  private ai: GoogleGenAI;
 
   constructor() {
-    const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey) {
+    const groqApiKey = process.env.GROQ_API_KEY;
+    if (!groqApiKey) {
       console.warn('Warning: GROQ_API_KEY is not defined in environment variables.');
     }
-    // Initialize the official Groq SDK
-    this.groq = new Groq({ apiKey: apiKey || '' });
+    this.groq = new Groq({ apiKey: groqApiKey || '' });
+
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!geminiApiKey) {
+      console.warn('Warning: GEMINI_API_KEY is not defined in environment variables.');
+    }
+    this.ai = new GoogleGenAI({ apiKey: geminiApiKey || '' });
   }
 
   /**
@@ -63,7 +71,8 @@ export class GeminiService {
     query: string, 
     referenceContext: string,
     pdfAttachments: Array<{ data: Buffer; mimeType: string; name?: string }> = [],
-    systemPrompt?: string
+    systemPrompt?: string,
+    llmProvider: string = 'groq'
   ): Promise<string> {
     try {
       const activeSystemPrompt = systemPrompt || 
@@ -130,27 +139,104 @@ INSTRUCTIONS FOR USING THE ABOVE CONTEXT:
 ${query}
 `.trim();
 
-      const targetModel = 'llama-3.3-70b-versatile';
-      console.log(`[Groq Router] Grounding query using model: ${targetModel}`);
+      const normalizedProvider = (llmProvider || 'groq').toLowerCase();
+      console.log(`[LLM Router] Grounding query using engine provider: ${normalizedProvider}`);
 
-      const response = await this.groq.chat.completions.create({
-        model: targetModel,
-        messages: [
-          {
-            role: 'system',
-            content: activeSystemPrompt
+      if (normalizedProvider === 'gemini') {
+        const geminiModel = 'gemini-1.5-flash';
+        console.log(`[LLM Router] Routing to Gemini model: ${geminiModel}`);
+        const response = await this.ai.models.generateContent({
+          model: geminiModel,
+          contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+          config: { systemInstruction: activeSystemPrompt }
+        });
+        return response.text?.trim() || 'No response generated from Gemini.';
+
+      } else if (normalizedProvider === 'openai') {
+        const openaiModel = 'gpt-4o-mini';
+        console.log(`[LLM Router] Routing to OpenAI model: ${openaiModel}`);
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
           },
-          {
-            role: 'user',
-            content: userMessage
-          }
-        ]
-      });
+          body: JSON.stringify({
+            model: openaiModel,
+            messages: [
+              { role: 'system', content: activeSystemPrompt },
+              { role: 'user', content: userMessage }
+            ]
+          })
+        });
+        const data = await response.json();
+        if (data.error) {
+          throw new Error(data.error.message || JSON.stringify(data.error));
+        }
+        return data.choices[0]?.message?.content?.trim() || 'No response generated from OpenAI.';
 
-      return response.choices[0]?.message?.content?.trim() || 'No response generated.';
+      } else if (normalizedProvider === 'claude') {
+        const claudeModel = 'claude-3-5-sonnet-20241022';
+        console.log(`[LLM Router] Routing to Anthropic Claude model: ${claudeModel}`);
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': `${process.env.CLAUDE_API_KEY}`,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify({
+            model: claudeModel,
+            max_tokens: 4000,
+            system: activeSystemPrompt,
+            messages: [{ role: 'user', content: userMessage }]
+          })
+        });
+        const data = await response.json();
+        if (data.error) {
+          throw new Error(data.error.message || JSON.stringify(data.error));
+        }
+        return data.content[0]?.text?.trim() || 'No response generated from Claude.';
+
+      } else if (normalizedProvider === 'perplexity') {
+        const perplexityModel = 'sonar';
+        console.log(`[LLM Router] Routing to Perplexity model: ${perplexityModel}`);
+        const response = await fetch('https://api.perplexity.ai/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.PERPLEXITY_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: perplexityModel,
+            messages: [
+              { role: 'system', content: activeSystemPrompt },
+              { role: 'user', content: userMessage }
+            ]
+          })
+        });
+        const data = await response.json();
+        if (data.error) {
+          throw new Error(data.error.message || JSON.stringify(data.error));
+        }
+        return data.choices[0]?.message?.content?.trim() || 'No response generated from Perplexity.';
+
+      } else {
+        // Fallback or explicit 'groq'
+        const targetModel = 'llama-3.3-70b-versatile';
+        console.log(`[LLM Router] Routing to Groq model: ${targetModel}`);
+        const response = await this.groq.chat.completions.create({
+          model: targetModel,
+          messages: [
+            { role: 'system', content: activeSystemPrompt },
+            { role: 'user', content: userMessage }
+          ]
+        });
+        return response.choices[0]?.message?.content?.trim() || 'No response generated.';
+      }
     } catch (error) {
-      console.error('Error calling Groq for grounded query:', error);
-      throw new Error(`Failed to process query with Groq grounding: ${(error as Error).message}`);
+      console.error('Error calling LLM for grounded query:', error);
+      throw new Error(`Failed to process query with grounding: ${(error as Error).message}`);
     }
   }
 

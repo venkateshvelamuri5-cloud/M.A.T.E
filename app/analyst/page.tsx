@@ -23,6 +23,7 @@ interface Agent {
   instructions?: string | null;
   keywords?: string | null;
   is_locked?: boolean;
+  llm_provider?: string;
 }
 
 interface ActivityLog {
@@ -459,6 +460,7 @@ export default function AnalystPortal() {
   const [editKeywords, setEditKeywords] = useState(''); // Comma-separated routing keywords
   const [editIsLocked, setEditIsLocked] = useState(false);
   const [editLinkedFiles, setEditLinkedFiles] = useState<string[]>([]); // Array of fileIds linked to active slot
+  const [editLlmProvider, setEditLlmProvider] = useState('groq'); // Selected LLM Provider (groq, openai, gemini, etc.)
 
   // Fetch real analytics parameters from Supabase tables
   const fetchAnalyticsAndFiles = async () => {
@@ -760,6 +762,7 @@ export default function AnalystPortal() {
       setEditInstructions(existing.instructions || '');
       setEditKeywords(existing.keywords || '');
       setEditIsLocked(existing.is_locked || false);
+      setEditLlmProvider(existing.llm_provider || 'groq');
       
       // Load linked files
       const linked = kbFiles.filter(f => f.agent_id === existing.id).map(f => f.id);
@@ -773,6 +776,7 @@ export default function AnalystPortal() {
       setEditKeywords('');
       setEditIsLocked(false);
       setEditLinkedFiles([]);
+      setEditLlmProvider('groq');
     }
   };
 
@@ -810,7 +814,8 @@ export default function AnalystPortal() {
           system_prompt: editPrompt,
           instructions: editInstructions,
           keywords: editKeywords,
-          is_locked: editIsLocked
+          is_locked: editIsLocked,
+          llm_provider: editLlmProvider
         };
 
         if (existing) {
@@ -1773,7 +1778,8 @@ export default function AnalystPortal() {
                                     description: editDesc,
                                     system_prompt: editPrompt,
                                     instructions: editInstructions,
-                                    is_locked: editIsLocked
+                                    is_locked: editIsLocked,
+                                    llm_provider: editLlmProvider
                                   }).select().single();
                                   if (insErr) throw insErr;
                                   agentId = newAgent.id;
@@ -1842,12 +1848,30 @@ export default function AnalystPortal() {
               )}
 
               {wizardStep === 4 && (
-                <div className="space-y-4">
-                  <h4 className="font-bold underline text-zinc-650 mb-2">Step 4: Control & Security</h4>
+                <div className="space-y-5">
+                  <h4 className="font-bold underline text-zinc-650 mb-2">Step 4: Engine Routing & Security</h4>
+
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-700 mb-1.5 uppercase tracking-wider">Active AI Engine</label>
+                    <select
+                      value={editLlmProvider}
+                      onChange={e => setEditLlmProvider(e.target.value)}
+                      className="w-full px-3 py-2.5 border-2 border-zinc-800 bg-[#FCFBF8] rounded-lg text-xs font-bold outline-none cursor-pointer focus:ring-1 focus:ring-[#575ECF]"
+                    >
+                      <option value="groq">Groq (Llama 3.3 70B - Ultra Fast / Free)</option>
+                      <option value="openai">OpenAI (GPT-4o-mini - Highly Mature / Cheap)</option>
+                      <option value="gemini">Google Gemini (1.5 Flash - Solid Grounding / Cheap)</option>
+                      <option value="claude">Anthropic Claude (3.5 Sonnet - Enterprise Reasoning)</option>
+                      <option value="perplexity">Perplexity AI (Sonar - Online Grounded Reasoning)</option>
+                    </select>
+                    <p className="mt-1 text-[10px] text-zinc-500 italic font-medium leading-normal">
+                      This determines the API provider and LLM model that will process all user queries and emails sent to this slot.
+                    </p>
+                  </div>
                   
                   {!editIsDeployed ? (
                     <div className="p-4 bg-zinc-50 text-zinc-500 rounded-lg text-center font-medium italic">
-                      Model is not deployed.
+                      Slot is not deployed yet. Default engine settings will be saved.
                     </div>
                   ) : (
                     <>

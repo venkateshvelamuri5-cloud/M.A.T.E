@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     // 3. Fetch agent system prompt and classification info
     const { data: dbAgent, error: agentErr } = await supabase
       .from('agents')
-      .select('name, system_prompt, instructions')
+      .select('name, system_prompt, instructions, llm_provider')
       .eq('id', agentId)
       .maybeSingle();
 
@@ -271,7 +271,8 @@ Mariner Profile:
       queryInput,
       `${marinerProfilePrompt}\n\n${fileReferenceContext}`,
       pdfAttachments,
-      agent.system_prompt
+      agent.system_prompt,
+      agent.llm_provider || 'groq'
     );
 
     if (processedResult) {
