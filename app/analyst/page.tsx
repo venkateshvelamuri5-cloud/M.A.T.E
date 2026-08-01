@@ -416,6 +416,26 @@ export default function AnalystPortal() {
   const [isSavingManual, setIsSavingManual] = useState(false);
   const [manualSaveMsg, setManualSaveMsg] = useState<string | null>(null);
 
+  // Category States
+  const [categoryNames, setCategoryNames] = useState({
+    A: '(A) ISM Admin Works',
+    B: '(B) Accounting & Payroll',
+    C: '(C) Crew Related',
+    D: '(D) Cargo Related',
+    E: '(E) Inventories',
+    F: '(F) Misc, Additional'
+  });
+  const [categoryNamesEditing, setCategoryNamesEditing] = useState({
+    A: '(A) ISM Admin Works',
+    B: '(B) Accounting & Payroll',
+    C: '(C) Crew Related',
+    D: '(D) Cargo Related',
+    E: '(E) Inventories',
+    F: '(F) Misc, Additional'
+  });
+  const [showCategoryEditor, setShowCategoryEditor] = useState(false);
+  const [isSavingCategories, setIsSavingCategories] = useState(false);
+
   // Authentication states
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAnalyst, setIsAnalyst] = useState(false);
@@ -515,6 +535,22 @@ export default function AnalystPortal() {
       if (manualData?.value) {
         setUserManualContent(manualData.value);
         setUserManualEditing(manualData.value);
+      }
+
+      // Fetch Custom Category Names from system_settings
+      const { data: catSettings } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'category_names')
+        .maybeSingle();
+      if (catSettings?.value) {
+        try {
+          const parsed = JSON.parse(catSettings.value);
+          setCategoryNames(prev => ({ ...prev, ...parsed }));
+          setCategoryNamesEditing(prev => ({ ...prev, ...parsed }));
+        } catch (jsonErr) {
+          console.error("Failed to parse category names:", jsonErr);
+        }
       }
 
     } catch (err) {
@@ -717,6 +753,26 @@ export default function AnalystPortal() {
       setManualSaveMsg(`Save failed: ${(err as Error).message}`);
     } finally {
       setIsSavingManual(false);
+    }
+  };
+
+  // Save Category Names to system_settings
+  const handleSaveCategories = async () => {
+    setIsSavingCategories(true);
+    try {
+      const { error } = await supabase
+        .from('system_settings')
+        .upsert({ key: 'category_names', value: JSON.stringify(categoryNamesEditing) }, { onConflict: 'key' });
+      if (error) throw error;
+      setCategoryNames(categoryNamesEditing);
+      setShowCategoryEditor(false);
+      setStatusMsg('Category names saved successfully! Changes are now live across all dashboards.');
+      setTimeout(() => setStatusMsg(null), 5000);
+    } catch (err) {
+      console.error(err);
+      setStatusMsg(`Failed to save category names: ${(err as Error).message}`);
+    } finally {
+      setIsSavingCategories(false);
     }
   };
 
@@ -923,8 +979,8 @@ export default function AnalystPortal() {
   // ----------------------------------------------------
   // GRID RENDER (Same layout framework as dashboard)
   // ----------------------------------------------------
-  const renderCategoryGrid = (categoryName: string) => {
-    const slots = AGENT_SLOTS_TEMPLATE.filter(s => s.category === categoryName);
+  const renderCategoryGrid = (categoryName: string, prefixLetter: string) => {
+    const slots = AGENT_SLOTS_TEMPLATE.filter(s => s.code.startsWith(prefixLetter));
     return (
       <div key={categoryName} className="bg-white border-2 border-[#1b1b1b] rounded-xl overflow-hidden shadow-[3px_3px_0px_0px_#1b1b1b] flex flex-col font-sans">
         <div className="bg-[#1d577a] text-white px-4 py-2.5 font-bold text-xs uppercase tracking-wide">
@@ -1062,8 +1118,8 @@ export default function AnalystPortal() {
     );
   }
 
-  const categoriesLeft = ['(A) ISM Admin Works', '(C) Crew Related', '(E) Inventories'];
-  const categoriesRight = ['(B) Accounting & Payroll', '(D) Cargo Related', '(F) Misc, Additional'];
+  const categoriesLeft = [categoryNames.A, categoryNames.C, categoryNames.E];
+  const categoriesRight = [categoryNames.B, categoryNames.D, categoryNames.F];
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans p-6 md:p-12 selection:bg-gold selection:text-deep relative">
@@ -1077,6 +1133,10 @@ export default function AnalystPortal() {
           <span className="text-zinc-300">|</span>
           <button onClick={handleLogout} className="text-xs text-zinc-550 hover:text-foreground transition font-bold uppercase tracking-wider">
             Sign Out
+          </button>
+          <span className="text-zinc-300">|</span>
+          <button onClick={() => { setCategoryNamesEditing(categoryNames); setShowCategoryEditor(true); }} className="text-xs text-[#575ECF] hover:text-[#464cb3] transition font-bold uppercase tracking-wider">
+            Edit Category Names
           </button>
         </div>
         <span className="text-[9px] bg-card border border-border text-[#575ECF] px-3 py-1.5 rounded-full font-bold uppercase tracking-wider">
@@ -1261,10 +1321,14 @@ export default function AnalystPortal() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-6">
-            {categoriesLeft.map(cat => renderCategoryGrid(cat))}
+            {renderCategoryGrid(categoryNames.A, 'A')}
+            {renderCategoryGrid(categoryNames.C, 'C')}
+            {renderCategoryGrid(categoryNames.E, 'E')}
           </div>
           <div className="space-y-6">
-            {categoriesRight.map(cat => renderCategoryGrid(cat))}
+            {renderCategoryGrid(categoryNames.B, 'B')}
+            {renderCategoryGrid(categoryNames.D, 'D')}
+            {renderCategoryGrid(categoryNames.F, 'F')}
           </div>
         </div>
       </div>
@@ -1600,6 +1664,70 @@ export default function AnalystPortal() {
           </div>
         )}
       </div>
+
+      {/* Category Editor Modal */}
+      {showCategoryEditor && (
+        <div className="fixed inset-0 bg-[#1b1b1b]/50 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+          <div className="w-full max-w-lg bg-card border-2 border-[#1b1b1b] rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[85vh]">
+            
+            {/* Modal Header */}
+            <div className="bg-[#FAF9F6] border-b border-[#dcdad5] px-6 py-4 flex justify-between items-center">
+              <div>
+                <h3 className="font-display font-black text-sm text-deep">
+                  Edit Dashboard Category Names
+                </h3>
+                <p className="text-[10px] text-zinc-550 font-bold uppercase tracking-wider mt-0.5">
+                  Rename Categories A through F
+                </p>
+              </div>
+              <button 
+                onClick={() => setShowCategoryEditor(false)}
+                className="text-[10px] text-zinc-550 border border-[#dcdad5] px-3 py-1.5 rounded-lg hover:bg-[#dcdad5]/40 font-bold uppercase transition"
+              >
+                Cancel
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-4 text-xs">
+              <div className="grid grid-cols-1 gap-4">
+                {(['A', 'B', 'C', 'D', 'E', 'F'] as const).map(letter => (
+                  <div key={letter}>
+                    <label className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">
+                      Category {letter} Name
+                    </label>
+                    <input 
+                      type="text"
+                      required
+                      value={categoryNamesEditing[letter]}
+                      onChange={e => setCategoryNamesEditing(prev => ({ ...prev, [letter]: e.target.value }))}
+                      className="w-full px-3 py-2 border border-[#dcdad5] focus:border-[#575ECF] rounded-lg text-xs outline-none bg-background text-[#1b1b1b] font-medium"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-[#FAF9F6] border-t border-[#dcdad5] px-6 py-4 flex justify-end gap-3">
+              <button 
+                onClick={() => setShowCategoryEditor(false)}
+                className="px-4 py-2 border border-[#dcdad5] rounded-lg text-xs font-bold uppercase tracking-wider text-zinc-700 hover:bg-[#dcdad5]/40 transition"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSaveCategories}
+                disabled={isSavingCategories}
+                className="px-5 py-2 bg-[#575ECF] hover:bg-[#464cb3] text-white rounded-lg text-xs font-bold uppercase tracking-wider transition disabled:opacity-50"
+              >
+                {isSavingCategories ? 'Saving...' : 'Save Category Names'}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* Selected Slot Setup Wizard Modal */}
       {selectedSlotCode && (

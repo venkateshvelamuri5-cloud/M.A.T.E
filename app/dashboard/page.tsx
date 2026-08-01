@@ -488,6 +488,16 @@ export default function UserDashboard() {
   // Dynamic Slot Mapping for Analyst Deployed Agents
   const [dynamicSlots, setDynamicSlots] = useState<AgentSlot[]>(AGENT_SLOTS);
 
+  // Custom Category Names state
+  const [categoryNames, setCategoryNames] = useState({
+    A: '(A) ISM Admin Works',
+    B: '(B) Accounting & Payroll',
+    C: '(C) Crew Related',
+    D: '(D) Cargo Related',
+    E: '(E) Inventories',
+    F: '(F) Misc, Additional'
+  });
+
   useEffect(() => {
     if (agents.length === 0) return;
 
@@ -745,6 +755,27 @@ export default function UserDashboard() {
     }
   };
 
+  // Fetch Custom Category Names from system_settings
+  const fetchCategoryNames = async () => {
+    try {
+      const { data } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'category_names')
+        .maybeSingle();
+      if (data?.value) {
+        try {
+          const parsed = JSON.parse(data.value);
+          setCategoryNames(prev => ({ ...prev, ...parsed }));
+        } catch (jsonErr) {
+          console.error("Failed to parse category names on dashboard:", jsonErr);
+        }
+      }
+    } catch (err) {
+      console.warn('Could not fetch category names:', err);
+    }
+  };
+
   // Check active user session on load
   useEffect(() => {
     const checkSession = async () => {
@@ -756,6 +787,7 @@ export default function UserDashboard() {
           setEmailInput(session.user.email || '');
           fetchUserData(session.user.id, session.user.email || '');
           fetchUserManual();
+          fetchCategoryNames();
         } else {
           router.push('/login');
         }
@@ -1194,8 +1226,8 @@ export default function UserDashboard() {
   }
 
   // Render Category Block
-  const renderCategoryCard = (categoryName: string) => {
-    const slots = dynamicSlots.filter(s => s.category === categoryName && s.name);
+  const renderCategoryCard = (categoryName: string, prefixLetter: string) => {
+    const slots = dynamicSlots.filter(s => s.code.startsWith(prefixLetter) && s.name);
     if (slots.length === 0) return null;
     return (
       <div key={categoryName} className="bg-white border-2 border-[#1b1b1b] rounded-xl overflow-hidden shadow-[3px_3px_0px_0px_#1b1b1b] flex flex-col">
@@ -1511,8 +1543,8 @@ export default function UserDashboard() {
   // ----------------------------------------------------
   // VIEW 2: STANDARD USER PAGE / DASHBOARD (Image 1)
   // ----------------------------------------------------
-  const categoriesLeft = ['(A) ISM Admin Works', '(C) Crew Related', '(E) Inventories'];
-  const categoriesRight = ['(B) Accounting & Payroll', '(D) Cargo Related', '(F) Misc, Additional'];
+  const categoriesLeft = [categoryNames.A, categoryNames.C, categoryNames.E];
+  const categoriesRight = [categoryNames.B, categoryNames.D, categoryNames.F];
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans p-6 md:p-12 selection:bg-gold selection:text-deep relative">
@@ -1700,12 +1732,16 @@ export default function UserDashboard() {
             
             {/* Left Category Column */}
             <div className="space-y-6">
-              {categoriesLeft.map(cat => renderCategoryCard(cat))}
+              {renderCategoryCard(categoryNames.A, 'A')}
+              {renderCategoryCard(categoryNames.C, 'C')}
+              {renderCategoryCard(categoryNames.E, 'E')}
             </div>
 
             {/* Right Category Column */}
             <div className="space-y-6">
-              {categoriesRight.map(cat => renderCategoryCard(cat))}
+              {renderCategoryCard(categoryNames.B, 'B')}
+              {renderCategoryCard(categoryNames.D, 'D')}
+              {renderCategoryCard(categoryNames.F, 'F')}
             </div>
 
           </div>
