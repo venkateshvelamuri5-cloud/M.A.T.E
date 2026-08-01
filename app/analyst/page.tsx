@@ -1631,6 +1631,29 @@ export default function AnalystPortal() {
                 <div className="space-y-4">
                   <h4 className="font-bold underline text-zinc-650 mb-2">Step 1: Deployment & Metadata</h4>
                   
+                  <div>
+                    <label className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Agent Model Name</label>
+                    <input 
+                      type="text"
+                      required
+                      value={editName}
+                      onChange={e => setEditName(e.target.value)}
+                      placeholder="e.g., A1 Risk Assessment"
+                      className="w-full px-3 py-2 border border-[#dcdad5] focus:border-[#575ECF] rounded-lg text-xs outline-none bg-background text-[#1b1b1b] font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Model Description</label>
+                    <textarea 
+                      required
+                      value={editDesc}
+                      onChange={e => setEditDesc(e.target.value)}
+                      placeholder="Routing intent or classification guidelines."
+                      rows={3}
+                      className="w-full px-3 py-2 border border-[#dcdad5] focus:border-[#575ECF] rounded-lg text-xs outline-none bg-background text-[#1b1b1b] font-medium"
+                    />
+                  </div>
+
                   <div className="flex items-center gap-3 p-3 bg-indigo-50/50 border border-[#575ECF]/20 rounded-lg">
                     <input 
                       type="checkbox"
@@ -1644,32 +1667,6 @@ export default function AnalystPortal() {
                     </label>
                   </div>
 
-                  {editIsDeployed && (
-                    <>
-                      <div>
-                        <label className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Agent Model Name</label>
-                        <input 
-                          type="text"
-                          required
-                          value={editName}
-                          onChange={e => setEditName(e.target.value)}
-                          placeholder="e.g., A1 Risk Assessment"
-                          className="w-full px-3 py-2 border border-[#dcdad5] focus:border-[#575ECF] rounded-lg text-xs outline-none bg-background text-[#1b1b1b] font-medium"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[9px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5">Model Description</label>
-                        <textarea 
-                          required
-                          value={editDesc}
-                          onChange={e => setEditDesc(e.target.value)}
-                          placeholder="Routing intent or classification guidelines."
-                          rows={3}
-                          className="w-full px-3 py-2 border border-[#dcdad5] focus:border-[#575ECF] rounded-lg text-xs outline-none bg-background text-[#1b1b1b] font-medium"
-                        />
-                      </div>
-                    </>
-                  )}
                   {!editIsDeployed && (
                     <div className="p-4 bg-zinc-50 text-zinc-500 rounded-lg text-center font-medium italic border border-zinc-200">
                       Unchecking this will remove this agent from the user dashboard.
