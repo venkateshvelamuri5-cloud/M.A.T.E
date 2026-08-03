@@ -1227,7 +1227,7 @@ export default function UserDashboard() {
 
   // Render Category Block
   const renderCategoryCard = (categoryName: string, prefixLetter: string) => {
-    const slots = dynamicSlots.filter(s => s.code.startsWith(prefixLetter) && s.name);
+    const slots = dynamicSlots.filter(s => s.code.startsWith(prefixLetter) && s.deployed && s.name);
     if (slots.length === 0) return null;
     return (
       <div key={categoryName} className="bg-white border-2 border-[#1b1b1b] rounded-xl overflow-hidden shadow-[3px_3px_0px_0px_#1b1b1b] flex flex-col">
@@ -1391,13 +1391,13 @@ export default function UserDashboard() {
                   <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Upload New Reference Document</p>
                   <label className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-zinc-300 hover:border-[#575ECF] bg-[#FCFBF8] hover:bg-indigo-50/30 rounded-lg py-4 cursor-pointer transition group">
                     <span className="text-xs font-bold text-zinc-500 group-hover:text-[#575ECF] transition flex items-center gap-1.5">
-                      <span className="text-base leading-none">+</span> Click to upload PDF, TXT, DOCX, MD
+                      <span className="text-base leading-none">+</span> Click to upload PDF, TXT, DOCX, MD, EXCEL
                     </span>
                     <input
                       type="file"
                       onChange={handleRunFileUpload}
                       className="hidden"
-                      accept=".pdf,.docx,.doc,.txt,.md,.rtf"
+                      accept=".pdf,.docx,.doc,.txt,.md,.rtf,.xlsx,.xls,.csv"
                     />
                   </label>
                   <p className="mt-2 text-[11px] text-red-500 italic font-medium">
@@ -1630,7 +1630,7 @@ export default function UserDashboard() {
             <div className="relative">
               <input 
                 type="file" 
-                accept=".pdf,.docx,.doc,.txt,.md,.rtf"
+                accept=".pdf,.docx,.doc,.txt,.md,.rtf,.xlsx,.xls,.csv"
                 onChange={handleFileUpload}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
               />

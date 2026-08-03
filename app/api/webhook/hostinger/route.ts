@@ -548,6 +548,20 @@ export async function POST(req: NextRequest) {
               } catch (docxErr) {
                 console.error(`Error extracting text from DOCX attachment ${filename}:`, docxErr);
               }
+            } else if (fileExt === 'xlsx' || fileExt === 'xls' || fileExt === 'csv') {
+              try {
+                const XLSX = require('xlsx');
+                const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+                let excelText = '';
+                for (const sheetName of workbook.SheetNames) {
+                  const sheet = workbook.Sheets[sheetName];
+                  const csvData = XLSX.utils.sheet_to_csv(sheet);
+                  excelText += `\n[Sheet: ${sheetName}]\n${csvData}\n`;
+                }
+                fileTextContent = excelText;
+              } catch (excelErr) {
+                console.error(`Error extracting text from Excel attachment ${filename}:`, excelErr);
+              }
             } else if (fileExt === 'pdf') {
               pdfAttachments.push({
                 data: fileBuffer,
@@ -649,6 +663,21 @@ export async function POST(req: NextRequest) {
                 fileTextContent = result.value;
               } catch (docxErr) {
                 console.error(`Error extracting text from DOCX ${fileRef.name}:`, docxErr);
+              }
+            } else if (fileExt === 'xlsx' || fileExt === 'xls' || fileExt === 'csv') {
+              const arrayBuffer = await fileBlob.arrayBuffer();
+              try {
+                const XLSX = require('xlsx');
+                const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
+                let excelText = '';
+                for (const sheetName of workbook.SheetNames) {
+                  const sheet = workbook.Sheets[sheetName];
+                  const csvData = XLSX.utils.sheet_to_csv(sheet);
+                  excelText += `\n[Sheet: ${sheetName}]\n${csvData}\n`;
+                }
+                fileTextContent = excelText;
+              } catch (excelErr) {
+                console.error(`Error extracting text from Excel ${fileRef.name}:`, excelErr);
               }
             } else if (fileExt === 'pdf') {
               const arrayBuffer = await fileBlob.arrayBuffer();

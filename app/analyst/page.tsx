@@ -1000,7 +1000,7 @@ export default function AnalystPortal() {
               >
                 <div className="flex items-center gap-3">
                   <span className="font-bold text-[#575ECF]">{template.code}</span>
-                  <span>{dbAgent ? dbAgent.name : template.name || '(Empty Slot)'}</span>
+                  <span>{dbAgent ? dbAgent.name : '(Empty Slot)'}</span>
                 </div>
                 <div className="flex items-center gap-3">
                   {isDeployed && (
@@ -1349,7 +1349,7 @@ export default function AnalystPortal() {
                 type="file" 
                 onChange={handleUploadKB} 
                 className="hidden" 
-                accept=".pdf,.docx,.doc,.txt,.md,.rtf"
+                accept=".pdf,.docx,.doc,.txt,.md,.rtf,.xlsx,.xls,.csv"
               />
             </label>
           </div>
@@ -1877,7 +1877,7 @@ export default function AnalystPortal() {
                         <div className="relative cursor-pointer w-full">
                           <input 
                             type="file" 
-                            accept=".pdf,.docx,.doc,.txt,.md,.rtf" 
+                            accept=".pdf,.docx,.doc,.txt,.md,.rtf,.xlsx,.xls,.csv" 
                             onChange={async (e) => {
                               if (!e.target.files || !e.target.files[0]) return;
                               const file = e.target.files[0];
@@ -1940,7 +1940,7 @@ export default function AnalystPortal() {
                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
                           />
                           <div className="px-4 py-2.5 border-2 border-dashed border-[#dcdad5] hover:bg-zinc-50 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition text-zinc-650">
-                            <Plus className="w-4 h-4 text-[#575ECF]" /> Click to upload PDF, TXT, DOCX, MD
+                            <Plus className="w-4 h-4 text-[#575ECF]" /> Click to upload PDF, TXT, DOCX, MD, EXCEL
                           </div>
                         </div>
                       </div>
@@ -2025,13 +2025,27 @@ export default function AnalystPortal() {
 
             {/* Modal Footer Controls */}
             <div className="bg-[#FAF9F6] border-t border-[#dcdad5] px-6 py-4 flex justify-between items-center">
-              <div>
+              <div className="flex gap-2 animate-fade-in">
                 {wizardStep > 1 && (
                   <button 
                     onClick={() => setWizardStep(prev => prev - 1)}
                     className="px-4 py-2 border border-[#dcdad5] hover:bg-secondary rounded-lg font-bold text-[10px] uppercase tracking-wider transition"
                   >
                     Back
+                  </button>
+                )}
+                {agents.some(a => a.slot_code === selectedSlotCode) && (
+                  <button 
+                    onClick={async (e) => {
+                      if (confirm(`Are you sure you want to undeploy and delete slot ${selectedSlotCode}? The slot will become completely empty.`)) {
+                        const code = selectedSlotCode;
+                        setSelectedSlotCode(null);
+                        await handleQuickToggleActive(e, code, true);
+                      }
+                    }}
+                    className="px-4 py-2 border-2 border-red-500 text-red-650 hover:bg-red-50 rounded-lg font-bold text-[10px] uppercase tracking-wider transition"
+                  >
+                    Delete Agent Slot
                   </button>
                 )}
               </div>

@@ -194,6 +194,21 @@ export async function POST(req: NextRequest) {
                } catch (docxErr) {
                  console.error(`Error reading docx context for ${file.name}:`, docxErr);
                }
+             } else if (fileExt === 'xlsx' || fileExt === 'xls' || fileExt === 'csv') {
+               const arrayBuffer = await fileBlob.arrayBuffer();
+               try {
+                 const XLSX = require('xlsx');
+                 const workbook = XLSX.read(new Uint8Array(arrayBuffer), { type: 'array' });
+                 let excelText = '';
+                 for (const sheetName of workbook.SheetNames) {
+                   const sheet = workbook.Sheets[sheetName];
+                   const csvData = XLSX.utils.sheet_to_csv(sheet);
+                   excelText += `\n[Sheet: ${sheetName}]\n${csvData}\n`;
+                 }
+                 fileTextContent = excelText;
+               } catch (excelErr) {
+                 console.error(`Error reading excel context for ${file.name}:`, excelErr);
+               }
              }
 
              if (fileExt === 'pdf') {
