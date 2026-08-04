@@ -698,13 +698,13 @@ export async function POST(req: NextRequest) {
               }
             } else if (fileExt === 'pdf') {
               const arrayBuffer = await fileBlob.arrayBuffer();
-              pdfAttachments.push({
-                data: Buffer.from(arrayBuffer),
-                mimeType: 'application/pdf',
-                name: fileRef.name
-              });
-              fileReferenceContext += `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${fileRef.name}\nClassification: Attached PDF Document (Reference)\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n==========================\n`;
-              continue;
+              try {
+                const pdfParse = require('pdf-parse');
+                const parsed = await pdfParse(Buffer.from(arrayBuffer));
+                fileTextContent = parsed?.text || '';
+              } catch (pdfErr) {
+                console.error(`Error reading PDF context for ${fileRef.name}:`, pdfErr);
+              }
             }
 
             if (fileTextContent) {
@@ -736,7 +736,15 @@ export async function POST(req: NextRequest) {
 
               const cleanedText = FileProcessor.cleanToMarkdown(textToInclude, fileRef.name);
               if (cleanedText) {
-                const docClassification = (fileRef.file_type === 'knowledge_base') ? 'Company Manual / Policy (Primary Authority)' : 'User Workspace Document';
+                const isCompanyManual = (fileRef.file_type === 'knowledge_base') || 
+                  fileRef.name.toLowerCase().includes('manual') || 
+                  fileRef.name.toLowerCase().includes('sms') || 
+                  fileRef.name.toLowerCase().includes('smp') || 
+                  fileRef.name.toLowerCase().includes('omp') || 
+                  fileRef.name.toLowerCase().includes('bdp') || 
+                  fileRef.name.toLowerCase().includes('erp');
+
+                const docClassification = isCompanyManual ? 'Company Manual / Policy (Primary Authority)' : 'User Workspace Document';
                 const formattedDocContext = `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${fileRef.name}\nClassification: ${docClassification}\n\nRelevant Excerpts:\n"""\n${cleanedText}\n"""\n==========================\n`;
 
                 // Hard safety budget: stop adding more files if the total context would exceed 40,000 characters (~10,000 tokens)

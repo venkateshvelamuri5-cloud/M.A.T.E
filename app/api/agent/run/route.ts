@@ -225,22 +225,23 @@ export async function POST(req: NextRequest) {
                } catch (excelErr) {
                  console.error(`Error reading excel context for ${file.name}:`, excelErr);
                }
+             } else if (fileExt === 'pdf') {
+               const arrayBuffer = await fileBlob.arrayBuffer();
+               try {
+                 const pdfParse = require('pdf-parse');
+                 const parsed = await pdfParse(Buffer.from(arrayBuffer));
+                 fileTextContent = parsed?.text || '';
+               } catch (pdfErr) {
+                 console.error(`Error reading PDF context for ${file.name}:`, pdfErr);
+               }
              }
 
-             if (fileExt === 'pdf') {
-               const arrayBuffer = await fileBlob.arrayBuffer();
-               pdfAttachments.push({
-                 data: Buffer.from(arrayBuffer),
-                 mimeType: 'application/pdf',
-                 name: file.name
-               });
-               fileReferenceContext += `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${file.name}\nClassification: Attached PDF Document (Reference)\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n==========================\n`;
-             } else {
-               // If this file belongs to another agent slot, skip it entirely!
-               if (file.agent_id && file.agent_id !== agentId) {
-                 continue;
-               }
+             // If this file belongs to another agent slot, skip it entirely!
+             if (file.agent_id && file.agent_id !== agentId) {
+               continue;
+             }
 
+             if (fileTextContent) {
                let textToInclude = fileTextContent;
                const isAgentAssociated = file.agent_id === agentId;
 
@@ -263,14 +264,22 @@ export async function POST(req: NextRequest) {
                  // Even if explicitly selected or agent associated, if it is extremely large (> 400k characters),
                  // we must extract matching chunks to prevent exceeding LLM context window limit.
                  if (fileTextContent.length > 400000) {
-                   console.log(`[Safety Guard] Large file "${file.name}" of size ${fileTextContent.length} chars matches. Chunking...`);
+                   console.log(`[Safety Guard] Large file "${file.name}" of size ${fileTextContent.length} chars. Chunking...`);
                    textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
                  }
                }
 
                const cleanedText = FileProcessor.cleanToMarkdown(textToInclude, file.name);
                if (cleanedText) {
-                 const docClassification = isKnowledgeBase ? 'Company Manual / Policy (Primary Authority)' : 'User Workspace Document';
+                 const isCompanyManual = isKnowledgeBase || 
+                   file.name.toLowerCase().includes('manual') || 
+                   file.name.toLowerCase().includes('sms') || 
+                   file.name.toLowerCase().includes('smp') || 
+                   file.name.toLowerCase().includes('omp') || 
+                   file.name.toLowerCase().includes('bdp') || 
+                   file.name.toLowerCase().includes('erp');
+
+                 const docClassification = isCompanyManual ? 'Company Manual / Policy (Primary Authority)' : 'User Workspace Document';
                  const formattedDocContext = `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${file.name}\nClassification: ${docClassification}\n\nRelevant Excerpts:\n"""\n${cleanedText}\n"""\n==========================\n`;
 
                  // Hard safety budget: stop adding more files if the total context would exceed 40,000 characters (~10,000 tokens)
