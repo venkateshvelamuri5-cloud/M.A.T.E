@@ -587,7 +587,7 @@ export async function POST(req: NextRequest) {
           .toLowerCase()
           .replace(/[^\w\s]/g, ' ')
           .split(/\s+/)
-          .filter(word => word.length > 3 && !stopWords.has(word));
+          .filter(word => word.length > 2 && !stopWords.has(word));
 
         // 3. Collect files to download (both user's private files and agent specialized knowledge files)
         let filesToDownload: any[] = [];

@@ -541,11 +541,11 @@ export default function ModulePage({ params }: { params: { slot_code: string } }
     const file = e.target.files[0];
     const fileSizeMB = parseFloat((file.size / (1024 * 1024)).toFixed(2));
     
-    const allowedExtensions = ['.pdf', '.docx', '.doc', '.txt', '.md', '.rtf'];
+    const allowedExtensions = ['.pdf', '.docx', '.doc', '.txt', '.md', '.rtf', '.xlsx', '.xls', '.csv'];
     const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
     
     if (!allowedExtensions.includes(fileExtension)) {
-      setTerminalLog(`>>> FILE UPLOAD ERROR <<<\nUpload failed. Only PDF, DOCX, DOC, TXT, MD, and RTF files are allowed.`);
+      setTerminalLog(`>>> FILE UPLOAD ERROR <<<\nUpload failed. Only PDF, DOCX, DOC, TXT, MD, RTF, and EXCEL files are allowed.`);
       return;
     }
 
@@ -998,13 +998,13 @@ ${manualText || 'No additional user manual content found in settings.'}`
                 <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Upload New Reference Document</p>
                 <label className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-zinc-300 hover:border-[#575ECF] bg-[#FCFBF8] hover:bg-indigo-50/30 rounded-lg py-4 cursor-pointer transition group">
                   <span className="text-xs font-bold text-zinc-500 group-hover:text-[#575ECF] transition flex items-center gap-1.5">
-                    <span className="text-base leading-none">+</span> Click to upload PDF, TXT, DOCX, MD
+                    <span className="text-base leading-none">+</span> Click to upload PDF, TXT, DOCX, MD, EXCEL
                   </span>
                   <input
                     type="file"
                     onChange={handleFileUpload}
                     className="hidden"
-                    accept=".pdf,.docx,.doc,.txt,.md,.rtf"
+                    accept=".pdf,.docx,.doc,.txt,.md,.rtf,.xlsx,.xls,.csv"
                   />
                 </label>
                 <p className="mt-2 text-[11px] text-red-500 italic font-medium">

@@ -84,7 +84,7 @@ export class GeminiService {
         .toLowerCase()
         .replace(/[^\w\s]/g, ' ')
         .split(/\s+/)
-        .filter(word => word.length > 3 && !stopWords.has(word));
+        .filter(word => word.length > 2 && !stopWords.has(word));
 
       // Compile any PDF attachments into text and append them to referenceContext
       let parsedPdfContext = '';

@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
       .toLowerCase()
       .replace(/[^\w\s]/g, ' ')
       .split(/\s+/)
-      .filter(word => word.length > 3 && !stopWords.has(word));
+      .filter(word => word.length > 2 && !stopWords.has(word));
 
     // Fetch Agent-specific associated knowledge files
     const { data: agentFiles } = await supabase
