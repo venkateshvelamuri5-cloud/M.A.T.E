@@ -590,27 +590,44 @@ export async function POST(req: NextRequest) {
           .filter(word => word.length > 3 && !stopWords.has(word));
 
         // 3. Collect files to download (both user's private files and agent specialized knowledge files)
-        const filesToDownload: any[] = [];
+        let filesToDownload: any[] = [];
 
-        // Fetch global knowledge base, agent specialized files, and user personal files in one query
-        const queryParts: string[] = [
-          'file_type.eq.knowledge_base',
-          `user_id.eq.${userId}`
-        ];
+        // Fetch files using separate clean queries
+        let agentFiles: any[] = [];
         if (selectedAgentId) {
-          queryParts.push(`agent_id.eq.${selectedAgentId}`);
+          const { data } = await supabase
+            .from('user_files')
+            .select('storage_path, name, file_type, user_id, agent_id')
+            .eq('agent_id', selectedAgentId);
+          if (data) agentFiles = data;
         }
 
-        const { data: userFiles, error: userFilesErr } = await supabase
+        let userPersonalFiles: any[] = [];
+        const { data: pFiles } = await supabase
           .from('user_files')
           .select('storage_path, name, file_type, user_id, agent_id')
-          .or(queryParts.join(','));
+          .eq('user_id', userId)
+          .not('file_type', 'eq', 'knowledge_base');
+        if (pFiles) userPersonalFiles = pFiles;
 
-        if (userFilesErr) {
-          console.warn('Failed to query files from database:', userFilesErr.message);
-        } else if (userFiles) {
-          filesToDownload.push(...userFiles);
+        let globalKBFiles: any[] = [];
+        const { data: gFiles } = await supabase
+          .from('user_files')
+          .select('storage_path, name, file_type, user_id, agent_id')
+          .eq('file_type', 'knowledge_base')
+          .is('agent_id', null);
+        if (gFiles) globalKBFiles = gFiles;
+
+        const mergedFiles = [
+          ...agentFiles,
+          ...userPersonalFiles,
+          ...globalKBFiles
+        ];
+        const filesMap = new Map<string, any>();
+        for (const f of mergedFiles) {
+          filesMap.set(f.storage_path, f);
         }
+        filesToDownload = Array.from(filesMap.values());
 
         FileProcessor.resetCache();
 
@@ -692,10 +709,11 @@ export async function POST(req: NextRequest) {
 
             if (fileTextContent) {
               let textToInclude = fileTextContent;
+              const isAgentAssociated = fileRef.agent_id && fileRef.agent_id === selectedAgentId;
 
-              // For personal workspace files:
-              if (isUserPersonalFile) {
-                // Check if keywords actually match the text content
+              // For files that are NOT associated with this agent slot:
+              if (!isAgentAssociated) {
+                // If it is a personal workspace file or global KB file, we check keywords:
                 const contentMatchesKeywords = keywords.length === 0 || keywords.some(kw => 
                   fileTextContent.toLowerCase().includes(kw)
                 );
@@ -705,13 +723,13 @@ export async function POST(req: NextRequest) {
                 }
 
                 // Extract matching paragraphs for large files to optimize context size
-                if (fileTextContent.length > 15000) {
+                if (fileTextContent.length > 25000) {
                   textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
                 }
               } else {
-                // For global knowledge base manuals, if they exceed 400k characters, chunk them to prevent Groq crashes.
+                // For agent associated files, if they are extremely large (> 400k characters), chunk them.
                 if (fileTextContent.length > 400000) {
-                  console.log(`[Groq Safety Guard] Large KB file "${fileRef.name}" of size ${fileTextContent.length} chars. Chunking...`);
+                  console.log(`[Safety Guard] Large KB file "${fileRef.name}" of size ${fileTextContent.length} chars. Chunking...`);
                   textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
                 }
               }
@@ -721,9 +739,9 @@ export async function POST(req: NextRequest) {
                 const docClassification = (fileRef.file_type === 'knowledge_base') ? 'Company Manual / Policy (Primary Authority)' : 'User Workspace Document';
                 const formattedDocContext = `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${fileRef.name}\nClassification: ${docClassification}\n\nRelevant Excerpts:\n"""\n${cleanedText}\n"""\n==========================\n`;
 
-                // Hard safety budget: stop adding more files if the total context would exceed 20,000 characters (~5,000 tokens)
-                if (fileReferenceContext.length + formattedDocContext.length > 20000) {
-                  console.log(`[Groq Safety Cap] Total context limit reached (20k chars). Skipping remaining files.`);
+                // Hard safety budget: stop adding more files if the total context would exceed 40,000 characters (~10,000 tokens)
+                if (fileReferenceContext.length + formattedDocContext.length > 40000) {
+                  console.log(`[Safety Cap] Total context limit reached (40k chars). Skipping remaining files.`);
                   break;
                 }
                 fileReferenceContext += formattedDocContext;

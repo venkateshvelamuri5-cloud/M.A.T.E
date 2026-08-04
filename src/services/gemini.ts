@@ -93,16 +93,16 @@ export class GeminiService {
           const parsed = await pdfParse(pdf.data);
           if (parsed?.text) {
             let textToInclude = parsed.text;
-            if (textToInclude.length > 15000) {
+            if (textToInclude.length > 25000) {
               const { FileProcessor } = require('./fileProcessor');
               textToInclude = FileProcessor.extractRelevantChunks(textToInclude, keywords);
             }
             if (textToInclude) {
               const formattedDocContext = `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${pdf.name || 'Attached PDF Document'}\nClassification: Attached User Document (Reference)\n\nRelevant Excerpts:\n"""\n${textToInclude}\n"""\n==========================\n`;
 
-              // Hard safety budget: stop adding PDFs if the total context would exceed 20,000 characters (~5,000 tokens)
-              if (referenceContext.length + parsedPdfContext.length + formattedDocContext.length > 20000) {
-                console.log(`[Groq Safety Cap] PDF context limit reached (20k chars). Skipping remaining PDFs.`);
+              // Hard safety budget: stop adding PDFs if the total context would exceed 40,000 characters (~10,000 tokens)
+              if (referenceContext.length + parsedPdfContext.length + formattedDocContext.length > 40000) {
+                console.log(`[Safety Cap] PDF context limit reached (40k chars). Skipping remaining PDFs.`);
                 break;
               }
               parsedPdfContext += formattedDocContext;

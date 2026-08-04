@@ -126,33 +126,49 @@ export async function POST(req: NextRequest) {
       .split(/\s+/)
       .filter(word => word.length > 3 && !stopWords.has(word));
 
+    // Fetch Agent-specific associated knowledge files
+    const { data: agentFiles } = await supabase
+      .from('user_files')
+      .select('*')
+      .eq('agent_id', agentId);
+
+    // Fetch User's personal files
+    let userFilesData: any[] = [];
     let targetFileIds = selectedFileIds;
     if (targetFileIds === undefined) {
       const { data: userFiles } = await supabase
         .from('user_files')
-        .select('id')
+        .select('*')
         .eq('user_id', userId)
         .not('file_type', 'eq', 'knowledge_base');
-      if (userFiles) {
-        targetFileIds = userFiles.map(f => f.id);
-      }
+      if (userFiles) userFilesData = userFiles;
+    } else if (targetFileIds.length > 0) {
+      const { data: userFiles } = await supabase
+        .from('user_files')
+        .select('*')
+        .in('id', targetFileIds)
+        .eq('user_id', userId);
+      if (userFiles) userFilesData = userFiles;
     }
 
-    let files: any[] = [];
-    const queryParts: string[] = [];
-    if (targetFileIds && targetFileIds.length > 0) {
-      queryParts.push(`and(id.in.(${targetFileIds.join(',')}),user_id.eq.${userId})`);
-    }
-    queryParts.push('file_type.eq.knowledge_base');
-
-    const { data: fetchedFiles } = await supabase
+    // Fetch Global Knowledge Base files (where agent_id is null)
+    const { data: globalFiles } = await supabase
       .from('user_files')
       .select('*')
-      .or(queryParts.join(','));
+      .eq('file_type', 'knowledge_base')
+      .is('agent_id', null);
 
-    if (fetchedFiles) {
-      files = fetchedFiles;
+    // Merge and deduplicate files by ID
+    const allFiles = [
+      ...(agentFiles || []),
+      ...(userFilesData || []),
+      ...(globalFiles || [])
+    ];
+    const filesMap = new Map<string, any>();
+    for (const f of allFiles) {
+      filesMap.set(f.id, f);
     }
+    const files = Array.from(filesMap.values());
 
     if (files && files.length > 0) {
       for (const file of files) {
@@ -220,10 +236,16 @@ export async function POST(req: NextRequest) {
                });
                fileReferenceContext += `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${file.name}\nClassification: Attached PDF Document (Reference)\n[This document is attached as a PDF file. Refer to the attached PDF for its full contents and layout.]\n==========================\n`;
              } else {
-               let textToInclude = fileTextContent;
+               // If this file belongs to another agent slot, skip it entirely!
+               if (file.agent_id && file.agent_id !== agentId) {
+                 continue;
+               }
 
-               // For files that were not explicitly selected (both personal and knowledge base files):
-               if (!isExplicitSelection) {
+               let textToInclude = fileTextContent;
+               const isAgentAssociated = file.agent_id === agentId;
+
+               // For files that are NOT explicitly selected and NOT associated with this agent slot:
+               if (!isExplicitSelection && !isAgentAssociated) {
                  // Check if keywords actually match the text content
                  const contentMatchesKeywords = keywords.length === 0 || keywords.some(kw => 
                    fileTextContent.toLowerCase().includes(kw)
@@ -234,14 +256,14 @@ export async function POST(req: NextRequest) {
                  }
 
                  // Extract matching paragraphs for large files to optimize context size
-                 if (fileTextContent.length > 15000) {
+                 if (fileTextContent.length > 25000) {
                    textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
                  }
                } else {
-                 // Even if explicitly selected, if it is extremely large (> 400k characters / ~100k tokens),
-                 // we must extract matching chunks to prevent exceeding Groq's 128k context window limit.
+                 // Even if explicitly selected or agent associated, if it is extremely large (> 400k characters),
+                 // we must extract matching chunks to prevent exceeding LLM context window limit.
                  if (fileTextContent.length > 400000) {
-                   console.log(`[Groq Safety Guard] Large file "${file.name}" of size ${fileTextContent.length} chars matches. Chunking...`);
+                   console.log(`[Safety Guard] Large file "${file.name}" of size ${fileTextContent.length} chars matches. Chunking...`);
                    textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
                  }
                }
@@ -251,9 +273,9 @@ export async function POST(req: NextRequest) {
                  const docClassification = isKnowledgeBase ? 'Company Manual / Policy (Primary Authority)' : 'User Workspace Document';
                  const formattedDocContext = `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${file.name}\nClassification: ${docClassification}\n\nRelevant Excerpts:\n"""\n${cleanedText}\n"""\n==========================\n`;
 
-                 // Hard safety budget: stop adding more files if the total context would exceed 20,000 characters (~5,000 tokens)
-                 if (fileReferenceContext.length + formattedDocContext.length > 20000) {
-                   console.log(`[Groq Safety Cap] Total context limit reached (20k chars). Skipping remaining files.`);
+                 // Hard safety budget: stop adding more files if the total context would exceed 40,000 characters (~10,000 tokens)
+                 if (fileReferenceContext.length + formattedDocContext.length > 40000) {
+                   console.log(`[Safety Cap] Total context limit reached (40k chars). Skipping remaining files.`);
                    break;
                  }
                  fileReferenceContext += formattedDocContext;
