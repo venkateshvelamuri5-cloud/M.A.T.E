@@ -737,14 +737,9 @@ export async function POST(req: NextRequest) {
                 }
               } else {
                 // For agent associated files, if they are extremely large (> 400k characters), chunk them.
-                if (fileTextContent.length > 400000) {
-                if (bypassKeywordMatch) {
-                  console.log(`[Safety Guard] Extremely large KB file "${fileRef.name}" of size ${fileTextContent.length} chars (Bypassed). Slicing...`);
-                  textToInclude = fileTextContent.substring(0, 400000);
-                } else {
+                if (!bypassKeywordMatch && fileTextContent.length > 400000) {
                   console.log(`[Safety Guard] Large KB file "${fileRef.name}" of size ${fileTextContent.length} chars. Chunking...`);
                   textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
-                }
                 }
               }
 
@@ -761,15 +756,7 @@ export async function POST(req: NextRequest) {
                 const docClassification = isCompanyManual ? 'Company Manual / Policy (Primary Authority)' : 'User Workspace Document';
                 const formattedDocContext = `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${fileRef.name}\nClassification: ${docClassification}\n\nRelevant Excerpts:\n"""\n${cleanedText}\n"""\n==========================\n`;
 
-                // Hard safety budget: stop adding more files if the total context would exceed 40,000 characters (~10,000 tokens)
-                if (fileReferenceContext.length + formattedDocContext.length > 40000) {
-                  const allowedLength = 40000 - fileReferenceContext.length;
-                  if (allowedLength > 500) {
-                    fileReferenceContext += formattedDocContext.substring(0, allowedLength) + '\n... [TRUNCATED] ...\n';
-                  }
-                  console.log(`[Safety Cap] Total context limit reached (40k chars). Skipping remaining files.`);
-                  break;
-                }
+                // Safety budget limit removed as requested: include full context
                 fileReferenceContext += formattedDocContext;
               }
             }

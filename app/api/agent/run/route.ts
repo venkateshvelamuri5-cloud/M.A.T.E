@@ -273,15 +273,10 @@ export async function POST(req: NextRequest) {
                } else {
                  // Even if explicitly selected or agent associated, if it is extremely large (> 400k characters),
                  // we must extract matching chunks to prevent exceeding LLM context window limit.
-                 if (fileTextContent.length > 400000) {
-                    if (bypassKeywordMatch) {
-                      console.log(`[Safety Guard] Extremely large file "${file.name}" of size ${fileTextContent.length} chars (Bypassed). Slicing...`);
-                      textToInclude = fileTextContent.substring(0, 400000);
-                    } else {
-                      console.log(`[Safety Guard] Large file "${file.name}" of size ${fileTextContent.length} chars. Chunking...`);
-                      textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
-                    }
-                 }
+                  if (!bypassKeywordMatch && fileTextContent.length > 400000) {
+                    console.log(`[Safety Guard] Large file "${file.name}" of size ${fileTextContent.length} chars. Chunking...`);
+                    textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
+                  }
                }
 
                const cleanedText = FileProcessor.cleanToMarkdown(textToInclude, file.name);
@@ -297,16 +292,8 @@ export async function POST(req: NextRequest) {
                  const docClassification = isCompanyManual ? 'Company Manual / Policy (Primary Authority)' : 'User Workspace Document';
                  const formattedDocContext = `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${file.name}\nClassification: ${docClassification}\n\nRelevant Excerpts:\n"""\n${cleanedText}\n"""\n==========================\n`;
 
-                 // Hard safety budget: stop adding more files if the total context would exceed 40,000 characters (~10,000 tokens)
-                 if (fileReferenceContext.length + formattedDocContext.length > 40000) {
-                   const allowedLength = 40000 - fileReferenceContext.length;
-                   if (allowedLength > 500) {
-                     fileReferenceContext += formattedDocContext.substring(0, allowedLength) + '\n... [TRUNCATED] ...\n';
-                   }
-                   console.log(`[Safety Cap] Total context limit reached (40k chars). Skipping remaining files.`);
-                   break;
-                 }
-                 fileReferenceContext += formattedDocContext;
+                  // Safety budget limit removed as requested: include full context
+                  fileReferenceContext += formattedDocContext;
                }
              }
             }
