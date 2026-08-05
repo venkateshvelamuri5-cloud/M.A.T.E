@@ -1,4 +1,5 @@
 "use client";
+// Force redeployment - Sarvam AI integration updated
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase } from '../../src/supabase-client';
