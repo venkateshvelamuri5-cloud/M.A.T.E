@@ -322,6 +322,10 @@ INSTRUCTIONS:
             ]
           })
         });
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`Sarvam AI API error (Status ${response.status}): ${errText}`);
+        }
         const data = await response.json();
         if (data.error) {
           throw new Error(data.error.message || JSON.stringify(data.error));
