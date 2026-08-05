@@ -324,7 +324,8 @@ Mariner Profile:
       `${marinerProfilePrompt}\n\n${fileReferenceContext}`,
       pdfAttachments,
       agent.system_prompt,
-      agent.llm_provider || 'groq'
+      agent.llm_provider || 'groq',
+      agentId
     );
 
     if (processedResult) {

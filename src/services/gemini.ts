@@ -1,5 +1,6 @@
 import Groq from 'groq-sdk';
 import { GoogleGenAI } from '@google/genai';
+import { supabase } from '../supabase-client';
 import pdfParse from 'pdf-parse';
 
 /**
@@ -72,7 +73,8 @@ export class GeminiService {
     referenceContext: string,
     pdfAttachments: Array<{ data: Buffer; mimeType: string; name?: string }> = [],
     systemPrompt?: string,
-    llmProvider: string = 'groq'
+    llmProvider: string = 'groq',
+    agentId?: string
   ): Promise<string> {
     try {
       const activeSystemPrompt = systemPrompt || 
@@ -145,13 +147,95 @@ ${query}
       if (normalizedProvider === 'gemini') {
         const geminiModel = 'gemini-3.5-flash-lite';
         console.log(`[LLM Router] Routing to Gemini model: ${geminiModel}`);
-        const response = await this.ai.models.generateContent({
-          model: geminiModel,
-          contents: [{ role: 'user', parts: [{ text: userMessage }] }],
-          config: { systemInstruction: activeSystemPrompt }
-        });
-        return response.text?.trim() || 'No response generated from Gemini.';
 
+        let cacheName: string | null = null;
+        const cachePrompt = `${fullReferenceContext}`;
+
+        if (agentId && cachePrompt.length > 20000) {
+          try {
+            const { data: agentData } = await supabase
+              .from('agents')
+              .select('gemini_cache_name, gemini_cache_expires_at')
+              .eq('id', agentId)
+              .single();
+              
+            if (agentData) {
+              const cacheExpiresAt = agentData.gemini_cache_expires_at;
+              const isCacheExpired = !cacheExpiresAt || new Date(cacheExpiresAt) <= new Date();
+              
+              if (agentData.gemini_cache_name && !isCacheExpired) {
+                cacheName = agentData.gemini_cache_name;
+                console.log(`[Cache System] Cache hit! Using warm cache: ${cacheName}`);
+              } else {
+                console.log(`[Cache System] Cache missing or expired. Creating new context cache...`);
+                const cache = await this.ai.caches.create({
+                  model: geminiModel,
+                  config: {
+                    contents: [{ role: 'user', parts: [{ text: cachePrompt }] }],
+                    displayName: `agent_${agentId.replace(/[^a-zA-Z0-9]/g, '_')}_context`,
+                    ttl: '604800s' // 7 days TTL
+                  }
+                });
+                cacheName = cache.name;
+                const newExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+                
+                await supabase
+                  .from('agents')
+                  .update({ gemini_cache_name: cacheName, gemini_cache_expires_at: newExpiresAt })
+                  .eq('id', agentId);
+                  
+                console.log(`[Cache System] Cache created and registered: ${cacheName}`);
+              }
+            }
+          } catch (cacheErr) {
+            console.error('[Cache System] Failed to resolve context cache, falling back to uncached run:', cacheErr);
+          }
+        }
+
+        if (cacheName) {
+          // With context cache, we only send the new query and profile instructions, omitting the manual content
+          const cachedUserMessage = `
+=== VESSEL Particulars & Systems & Mariner Profile ===
+${referenceContext.replace(fullReferenceContext, '')}
+
+=== USER QUERY ===
+${query}
+
+INSTRUCTIONS:
+1. VESSEL SETTINGS: Refer to the Vessel Particulars above. Tailor your response.
+2. COMPANY MANUALS: Use the cached company manual reference files to source facts.
+3. CITATIONS: Cite document filenames where applicable.
+`;
+          
+          const response = await this.ai.models.generateContent({
+            model: geminiModel,
+            contents: [{ role: 'user', parts: [{ text: cachedUserMessage }] }],
+            config: { 
+              systemInstruction: activeSystemPrompt,
+              cachedContent: cacheName
+            }
+          });
+
+          // Update expires_at to extend TTL in the background
+          const newExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+          supabase
+            .from('agents')
+            .update({ gemini_cache_expires_at: newExpiresAt })
+            .eq('id', agentId)
+            .then(({ error }) => {
+              if (error) console.error('[Cache System] Failed to extend cache expiry:', error);
+            });
+
+          return response.text?.trim() || 'No response generated from Gemini.';
+        } else {
+          // Fallback to normal uncached run
+          const response = await this.ai.models.generateContent({
+            model: geminiModel,
+            contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+            config: { systemInstruction: activeSystemPrompt }
+          });
+          return response.text?.trim() || 'No response generated from Gemini.';
+        }
       } else if (normalizedProvider === 'openai') {
         const openaiModel = 'gpt-4o-mini';
         console.log(`[LLM Router] Routing to OpenAI model: ${openaiModel}`);

@@ -790,7 +790,8 @@ Mariner Profile:
         `${marinerProfilePrompt}\n\n${fileReferenceContext}`,
         pdfAttachments,
         selectedAgentPrompt,
-        selectedAgentLlmProvider
+        selectedAgentLlmProvider,
+        selectedAgentId || undefined
       );
 
       if (processedResult) {
