@@ -299,6 +299,10 @@ export async function POST(req: NextRequest) {
 
                  // Hard safety budget: stop adding more files if the total context would exceed 40,000 characters (~10,000 tokens)
                  if (fileReferenceContext.length + formattedDocContext.length > 40000) {
+                   const allowedLength = 40000 - fileReferenceContext.length;
+                   if (allowedLength > 500) {
+                     fileReferenceContext += formattedDocContext.substring(0, allowedLength) + '\n... [TRUNCATED] ...\n';
+                   }
                    console.log(`[Safety Cap] Total context limit reached (40k chars). Skipping remaining files.`);
                    break;
                  }

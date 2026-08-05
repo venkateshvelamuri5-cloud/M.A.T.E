@@ -80,7 +80,22 @@ export class FileProcessor {
     if (!text) return '';
     if (!keywords || keywords.length === 0) return text;
 
-    const paragraphs = text.split(/\n\n+/);
+    let paragraphs = text.split(/\n\n+/);
+    if (paragraphs.length < 5) {
+      const rawLines = text.split(/\r?\n/);
+      paragraphs = [];
+      let currentChunk: string[] = [];
+      for (const line of rawLines) {
+        currentChunk.push(line);
+        if (currentChunk.length >= 10) {
+          paragraphs.push(currentChunk.join('\n'));
+          currentChunk = [];
+        }
+      }
+      if (currentChunk.length > 0) {
+        paragraphs.push(currentChunk.join('\n'));
+      }
+    }
     const scoredParagraphs: Array<{ index: number; score: number }> = [];
 
     // 1. Score each paragraph based on keyword term frequency (TF)
