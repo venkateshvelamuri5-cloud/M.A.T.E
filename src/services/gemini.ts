@@ -305,6 +305,29 @@ INSTRUCTIONS:
         }
         return data.choices[0]?.message?.content?.trim() || 'No response generated from Perplexity.';
 
+      } else if (normalizedProvider === 'sarvam') {
+        const sarvamModel = 'sarvam-105b';
+        console.log(`[LLM Router] Routing to Sarvam AI model: ${sarvamModel}`);
+        const response = await fetch('https://api.sarvam.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'api-subscription-key': `${process.env.SARVAM_API_KEY || ''}`
+          },
+          body: JSON.stringify({
+            model: sarvamModel,
+            messages: [
+              { role: 'system', content: activeSystemPrompt },
+              { role: 'user', content: userMessage }
+            ]
+          })
+        });
+        const data = await response.json();
+        if (data.error) {
+          throw new Error(data.error.message || JSON.stringify(data.error));
+        }
+        return data.choices[0]?.message?.content?.trim() || 'No response generated from Sarvam AI.';
+
       } else {
         // Fallback or explicit 'groq'
         const targetModel = 'llama-3.3-70b-versatile';

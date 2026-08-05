@@ -2009,6 +2009,7 @@ export default function AnalystPortal() {
                       <option value="gemini">Google Gemini (1.5 Flash - Solid Grounding / Cheap)</option>
                       <option value="claude">Anthropic Claude (3.5 Sonnet - Enterprise Reasoning)</option>
                       <option value="perplexity">Perplexity AI (Sonar - Online Grounded Reasoning)</option>
+                      <option value="sarvam">Sarvam AI (sarvam-105b - Indic Optimized / Cheap)</option>
                     </select>
                     <p className="mt-1 text-[10px] text-zinc-500 italic font-medium leading-normal">
                       This determines the API provider and LLM model that will process all user queries and emails sent to this slot.
