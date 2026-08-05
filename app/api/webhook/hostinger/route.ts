@@ -16,6 +16,7 @@ export async function POST(req: NextRequest) {
 
   let userId: string | null = null;
   let selectedAgentId: string | null = null;
+  let bypassKeywordMatch = false;
   let subject = 'M.A.T.E Maritime Inquiry';
   let from = '';
   let limitCount = 0;
@@ -394,7 +395,7 @@ export async function POST(req: NextRequest) {
     try {
       const { data: dbAgents } = await supabase
         .from('agents')
-        .select('id, name, description, system_prompt, send_attachment, slot_code, keywords, llm_provider');
+        .select('*');
 
       if (dbAgents && dbAgents.length > 0) {
 
@@ -441,6 +442,7 @@ export async function POST(req: NextRequest) {
           selectedAgentId = matchedAgent.id;
           agentConfigSendAttachment = matchedAgent.send_attachment || false;
           selectedAgentLlmProvider = matchedAgent.llm_provider || 'groq';
+          bypassKeywordMatch = matchedAgent.bypass_keyword_match || false;
           console.log(`[ROUTING] Final: Agent "${matchedAgent.name}" via ${routingLayer} (Engine: ${selectedAgentLlmProvider})`);
         }
       }
@@ -582,13 +584,20 @@ export async function POST(req: NextRequest) {
 
         // 2. Extract keywords from the query/subject/body for user files filtering
         const searchText = `${subject} ${promptQuery || ''} ${bodyText}`;
-        const stopWords = new Set(['what', 'make', 'vessel', 'please', 'with', 'from', 'about', 'need', 'have', 'does', 'show', 'your', 'were', 'that', 'this', 'there', 'their', 'only', 'also', 'include', 'report', 'send', 'query', 'task', 'run', 'agent']);
+        const stopWords = new Set([
+          'and', 'the', 'for', 'with', 'about', 'against', 'from', 'this', 'that', 'vessel', 'management', 'safety',
+          'of', 'in', 'on', 'at', 'to', 'by', 'is', 'it', 'an', 'as', 'or', 'be', 'do', 'so', 'no', 'if', 'we', 'he',
+          'my', 'go', 'me', 'up', 'us', 'are', 'was', 'but', 'not', 'you', 'our', 'his', 'her', 'its', 'has', 'had',
+          'can', 'out', 'all', 'any', 'who', 'how', 'why', 'new', 'now', 'own', 'one', 'two', 'use', 'get', 'see',
+          'day', 'way', 'due', 'she', 'they', 'them', 'their', 'him', 'who', 'whom', 'which', 'what', 'these', 'those',
+          'please', 'what', 'make', 'need', 'have', 'does', 'show', 'your', 'were', 'there', 'only', 'also', 'include',
+          'report', 'send', 'query', 'task', 'run', 'agent'
+        ]);
         const keywords = searchText
           .toLowerCase()
           .replace(/[^\w\s]/g, ' ')
           .split(/\s+/)
-          .filter(word => word.length > 2 && !stopWords.has(word));
-
+          .filter(word => word.length > 1 && !stopWords.has(word));
         // 3. Collect files to download (both user's private files and agent specialized knowledge files)
         let filesToDownload: any[] = [];
 
@@ -712,7 +721,7 @@ export async function POST(req: NextRequest) {
               const isAgentAssociated = fileRef.agent_id && fileRef.agent_id === selectedAgentId;
 
               // For files that are NOT associated with this agent slot:
-              if (!isAgentAssociated) {
+              if (!isAgentAssociated && !bypassKeywordMatch) {
                 // If it is a personal workspace file or global KB file, we check keywords:
                 const contentMatchesKeywords = keywords.length === 0 || keywords.some(kw => 
                   fileTextContent.toLowerCase().includes(kw)
@@ -729,8 +738,13 @@ export async function POST(req: NextRequest) {
               } else {
                 // For agent associated files, if they are extremely large (> 400k characters), chunk them.
                 if (fileTextContent.length > 400000) {
+                if (bypassKeywordMatch) {
+                  console.log(`[Safety Guard] Extremely large KB file "${fileRef.name}" of size ${fileTextContent.length} chars (Bypassed). Slicing...`);
+                  textToInclude = fileTextContent.substring(0, 400000);
+                } else {
                   console.log(`[Safety Guard] Large KB file "${fileRef.name}" of size ${fileTextContent.length} chars. Chunking...`);
                   textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
+                }
                 }
               }
 

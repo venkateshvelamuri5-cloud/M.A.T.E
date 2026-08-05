@@ -24,6 +24,7 @@ interface Agent {
   keywords?: string | null;
   is_locked?: boolean;
   llm_provider?: string;
+  bypass_keyword_match?: boolean;
 }
 
 interface ActivityLog {
@@ -481,6 +482,7 @@ export default function AnalystPortal() {
   const [editIsLocked, setEditIsLocked] = useState(false);
   const [editLinkedFiles, setEditLinkedFiles] = useState<string[]>([]); // Array of fileIds linked to active slot
   const [editLlmProvider, setEditLlmProvider] = useState('groq'); // Selected LLM Provider (groq, openai, gemini, etc.)
+  const [editBypassKeywordMatch, setEditBypassKeywordMatch] = useState(false);
 
   // Fetch real analytics parameters from Supabase tables
   const fetchAnalyticsAndFiles = async () => {
@@ -819,6 +821,7 @@ export default function AnalystPortal() {
       setEditKeywords(existing.keywords || '');
       setEditIsLocked(existing.is_locked || false);
       setEditLlmProvider(existing.llm_provider || 'groq');
+      setEditBypassKeywordMatch(existing.bypass_keyword_match || false);
       
       // Load linked files
       const linked = kbFiles.filter(f => f.agent_id === existing.id).map(f => f.id);
@@ -833,6 +836,7 @@ export default function AnalystPortal() {
       setEditIsLocked(false);
       setEditLinkedFiles([]);
       setEditLlmProvider('groq');
+      setEditBypassKeywordMatch(false);
     }
   };
 
@@ -871,7 +875,8 @@ export default function AnalystPortal() {
           instructions: editInstructions,
           keywords: editKeywords,
           is_locked: editIsLocked,
-          llm_provider: editLlmProvider
+          llm_provider: editLlmProvider,
+          bypass_keyword_match: editBypassKeywordMatch
         };
 
         if (existing) {
@@ -1848,6 +1853,22 @@ export default function AnalystPortal() {
                         />
                         <p className="text-[10px] text-zinc-400 mt-1.5 italic">
                           Comma-separated. When an email contains these words (exact or fuzzy match), it will be automatically routed to this agent — no AI guessing. Include common typos and abbreviations (e.g. "RA", "risk assesment").
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-1 mt-2">
+                        <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={editBypassKeywordMatch}
+                            onChange={e => setEditBypassKeywordMatch(e.target.checked)}
+                            className="rounded border-[#dcdad5] text-[#575ECF] focus:ring-[#575ECF]"
+                          />
+                          <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
+                            Disable Keyword Match (RAG Filter)
+                          </span>
+                        </label>
+                        <p className="text-[10px] text-zinc-400 italic">
+                          If checked, manuals associated with this agent or selected by the user will be passed in full to the prompt context without running the RAG keyword filter. (Highly recommended if manual referencing is failing).
                         </p>
                       </div>
                     </>

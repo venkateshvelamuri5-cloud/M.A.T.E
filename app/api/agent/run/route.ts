@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     // 3. Fetch agent system prompt and classification info
     const { data: dbAgent, error: agentErr } = await supabase
       .from('agents')
-      .select('name, system_prompt, instructions, llm_provider')
+      .select('*')
       .eq('id', agentId)
       .maybeSingle();
 
@@ -119,12 +119,22 @@ export async function POST(req: NextRequest) {
     FileProcessor.resetCache();
 
     // Extract keywords for Strategy 2 (Lightweight RAG filtering)
-    const stopWords = new Set(['what', 'make', 'vessel', 'please', 'with', 'from', 'about', 'need', 'have', 'does', 'show', 'your', 'were', 'that', 'this', 'there', 'their', 'only', 'also', 'include', 'report', 'send', 'query', 'task', 'run', 'agent']);
+    const stopWords = new Set([
+      'and', 'the', 'for', 'with', 'about', 'against', 'from', 'this', 'that', 'vessel', 'management', 'safety',
+      'of', 'in', 'on', 'at', 'to', 'by', 'is', 'it', 'an', 'as', 'or', 'be', 'do', 'so', 'no', 'if', 'we', 'he',
+      'my', 'go', 'me', 'up', 'us', 'are', 'was', 'but', 'not', 'you', 'our', 'his', 'her', 'its', 'has', 'had',
+      'can', 'out', 'all', 'any', 'who', 'how', 'why', 'new', 'now', 'own', 'one', 'two', 'use', 'get', 'see',
+      'day', 'way', 'due', 'she', 'they', 'them', 'their', 'him', 'who', 'whom', 'which', 'what', 'these', 'those',
+      'please', 'what', 'make', 'need', 'have', 'does', 'show', 'your', 'were', 'there', 'only', 'also', 'include',
+      'report', 'send', 'query', 'task', 'run', 'agent'
+    ]);
     const keywords = queryInput
       .toLowerCase()
       .replace(/[^\w\s]/g, ' ')
       .split(/\s+/)
-      .filter(word => word.length > 2 && !stopWords.has(word));
+      .filter(word => word.length > 1 && !stopWords.has(word));
+
+    const bypassKeywordMatch = agent.bypass_keyword_match || false;
 
     // Fetch Agent-specific associated knowledge files
     const { data: agentFiles } = await supabase
@@ -246,7 +256,7 @@ export async function POST(req: NextRequest) {
                const isAgentAssociated = file.agent_id === agentId;
 
                // For files that are NOT explicitly selected and NOT associated with this agent slot:
-               if (!isExplicitSelection && !isAgentAssociated) {
+               if (!isExplicitSelection && !isAgentAssociated && !bypassKeywordMatch) {
                  // Check if keywords actually match the text content
                  const contentMatchesKeywords = keywords.length === 0 || keywords.some(kw => 
                    fileTextContent.toLowerCase().includes(kw)
@@ -264,8 +274,13 @@ export async function POST(req: NextRequest) {
                  // Even if explicitly selected or agent associated, if it is extremely large (> 400k characters),
                  // we must extract matching chunks to prevent exceeding LLM context window limit.
                  if (fileTextContent.length > 400000) {
-                   console.log(`[Safety Guard] Large file "${file.name}" of size ${fileTextContent.length} chars. Chunking...`);
-                   textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
+                    if (bypassKeywordMatch) {
+                      console.log(`[Safety Guard] Extremely large file "${file.name}" of size ${fileTextContent.length} chars (Bypassed). Slicing...`);
+                      textToInclude = fileTextContent.substring(0, 400000);
+                    } else {
+                      console.log(`[Safety Guard] Large file "${file.name}" of size ${fileTextContent.length} chars. Chunking...`);
+                      textToInclude = FileProcessor.extractRelevantChunks(fileTextContent, keywords);
+                    }
                  }
                }
 
