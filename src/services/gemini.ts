@@ -173,7 +173,8 @@ ${query}
                   config: {
                     contents: [{ role: 'user', parts: [{ text: cachePrompt }] }],
                     displayName: `agent_${agentId.replace(/[^a-zA-Z0-9]/g, '_')}_context`,
-                    ttl: '604800s' // 7 days TTL
+                    ttl: '604800s', // 7 days TTL
+                    systemInstruction: { parts: [{ text: activeSystemPrompt }] }
                   }
                 });
                 cacheName = cache.name;
@@ -211,7 +212,6 @@ INSTRUCTIONS:
             model: geminiModel,
             contents: [{ role: 'user', parts: [{ text: cachedUserMessage }] }],
             config: { 
-              systemInstruction: activeSystemPrompt,
               cachedContent: cacheName
             }
           });
