@@ -343,15 +343,26 @@ Mariner Profile:
 
     // Calculate Token Usage & Cost
     const totalInputText = (queryInput || '') + '\n' + (marinerProfilePrompt || '') + '\n' + (fileReferenceContext || '') + '\n' + (agent.system_prompt || '');
-    const inputTokens = Math.ceil(totalInputText.length / 4);
+    let inputTokens = Math.ceil(totalInputText.length / 4);
+    let cachedTokens = 0;
     const outputTokens = Math.ceil(processedResult.length / 4);
     
-    // Gemini 2.5 Flash pay-as-you-go pricing (cost per 1M tokens)
-    const isHighContext = inputTokens > 128000;
+    if (agent.llm_provider === 'gemini' && agent.gemini_cache_name) {
+      const cachedText = (fileReferenceContext || '') + '\n' + (agent.system_prompt || '');
+      cachedTokens = Math.ceil(cachedText.length / 4);
+      const uncachedText = (queryInput || '') + '\n' + (marinerProfilePrompt || '');
+      inputTokens = Math.ceil(uncachedText.length / 4);
+    }
+    
+    // Gemini 2.5/3.5 Flash pay-as-you-go pricing (cost per 1M tokens)
+    const isHighContext = (inputTokens + cachedTokens) > 128000;
     const inputPricePerM = isHighContext ? 0.15 : 0.075;
+    const cachedPricePerM = isHighContext ? 0.0375 : 0.01875; // 75% discount for cached read
     const outputPricePerM = isHighContext ? 0.60 : 0.30;
     
-    const runCost = ((inputTokens * inputPricePerM) / 1000000) + ((outputTokens * outputPricePerM) / 1000000);
+    const runCost = ((inputTokens * inputPricePerM) / 1000000) + 
+                    ((cachedTokens * cachedPricePerM) / 1000000) + 
+                    ((outputTokens * outputPricePerM) / 1000000);
 
     await supabase
       .from('interactions_log')
