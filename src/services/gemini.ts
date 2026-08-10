@@ -151,7 +151,7 @@ ${query}
         let cacheName: string | null = null;
         const cachePrompt = `${fullReferenceContext}`;
 
-        if (agentId && cachePrompt.length > 20000) {
+        if (false) { // Disabled context caching due to high hourly storage fees ($1/million tokens/hour)
           try {
             const { data: agentData } = await supabase
               .from('agents')
