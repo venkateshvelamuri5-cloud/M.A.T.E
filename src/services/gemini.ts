@@ -234,6 +234,7 @@ ${query}
           },
           body: JSON.stringify({
             model: sarvamModel,
+            max_tokens: 8192,
             messages: [
               { role: 'system', content: activeSystemPrompt },
               { role: 'user', content: userMessage }
@@ -248,11 +249,17 @@ ${query}
         if (data.error) {
           throw new Error(data.error.message || JSON.stringify(data.error));
         }
-        const content = data.choices?.[0]?.message?.content?.trim();
-        if (!content) {
+        
+        const messageObj = data.choices?.[0]?.message || {};
+        const content = messageObj.content?.trim();
+        const reasoning = messageObj.reasoning_content?.trim();
+        
+        if (!content && !reasoning) {
           console.warn('[LLM Router] Sarvam AI returned an empty response. Raw payload:', JSON.stringify(data, null, 2));
         }
-        return content || 'No response generated from Sarvam AI.';
+        
+        // If content is null (because it hit length limit while reasoning), return reasoning
+        return content || reasoning || 'No response generated from Sarvam AI.';
 
       } else {
         // Fallback or explicit 'groq'
