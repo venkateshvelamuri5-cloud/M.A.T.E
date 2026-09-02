@@ -248,7 +248,11 @@ ${query}
         if (data.error) {
           throw new Error(data.error.message || JSON.stringify(data.error));
         }
-        return data.choices[0]?.message?.content?.trim() || 'No response generated from Sarvam AI.';
+        const content = data.choices?.[0]?.message?.content?.trim();
+        if (!content) {
+          console.warn('[LLM Router] Sarvam AI returned an empty response. Raw payload:', JSON.stringify(data, null, 2));
+        }
+        return content || 'No response generated from Sarvam AI.';
 
       } else {
         // Fallback or explicit 'groq'
