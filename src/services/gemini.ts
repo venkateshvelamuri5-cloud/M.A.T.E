@@ -224,7 +224,7 @@ ${query}
         return data.choices[0]?.message?.content?.trim() || 'No response generated from Perplexity.';
 
       } else if (normalizedProvider === 'sarvam') {
-        const sarvamModel = 'sarvam-105b';
+        const sarvamModel = 'sarvam-105b-conversations';
         console.log(`[LLM Router] Routing to Sarvam AI model: ${sarvamModel}`);
         const response = await fetch('https://api.sarvam.ai/v1/chat/completions', {
           method: 'POST',
