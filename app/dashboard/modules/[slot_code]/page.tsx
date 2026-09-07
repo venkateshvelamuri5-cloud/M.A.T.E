@@ -647,6 +647,7 @@ export default function ModulePage({ params }: { params: { slot_code: string } }
     try {
       const response = await fetch('/api/agent/run', {
         method: 'POST',
+        cache: 'no-store',
         headers: {
           'Content-Type': 'application/json',
         },

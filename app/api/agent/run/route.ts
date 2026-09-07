@@ -4,6 +4,8 @@ import { GeminiService } from '../../../../src/services/gemini';
 import { SmtpService } from '../../../../src/services/smtp';
 import { FileProcessor } from '../../../../src/services/fileProcessor';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
   const gemini = new GeminiService();
   let userId: string | null = null;
