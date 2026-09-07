@@ -226,6 +226,8 @@ ${query}
       } else if (normalizedProvider === 'sarvam') {
         const sarvamModel = 'sarvam-105b-conversations';
         console.log(`[LLM Router] Routing to Sarvam AI model: ${sarvamModel}`);
+        console.log(`[LLM Router] Sending Query to Sarvam:`, query);
+        
         const response = await fetch('https://api.sarvam.ai/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -235,6 +237,7 @@ ${query}
           body: JSON.stringify({
             model: sarvamModel,
             max_tokens: 8192,
+            temperature: 0.7,
             messages: [
               { role: 'system', content: activeSystemPrompt },
               { role: 'user', content: userMessage }
