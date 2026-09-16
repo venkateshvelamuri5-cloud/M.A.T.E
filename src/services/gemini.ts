@@ -266,7 +266,7 @@ ${query}
 
       } else {
         // Fallback or explicit 'groq'
-        const targetModel = 'llama-3.3-70b-versatile';
+        const targetModel = 'llama-3.1-70b-versatile';
         console.log(`[LLM Router] Routing to Groq model: ${targetModel}`);
         const response = await this.groq.chat.completions.create({
           model: targetModel,
