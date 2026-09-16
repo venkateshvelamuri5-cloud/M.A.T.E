@@ -231,13 +231,13 @@ export async function POST(req: NextRequest) {
 
     // 3. Connect to Supabase to verify user profiles and limits
     try {
-      const { data: dbProfile, error: profileErr } = await supabase
+      const { data: dbProfiles, error: profileErr } = await supabase
         .from('profiles')
-        .select('id, subscription_plan, email, full_name, rank, company_name, vessel_name, vessel_type, operator_name, grt, has_pump_room, pump_system_type, has_bow_thruster, carries_chemical_cargo, has_egcs, egcs_type, operates_us_waters, operates_aus_nz_waters, operates_eu_waters, operates_chinese_waters')
+        .select('id, subscription_plan, email, full_name, rank, company_name, vessel_name, vessel_type, operator_name, grt, has_pump_room, pump_system_type, has_bow_thruster, carries_chemical_cargo, has_egcs, egcs_type, operates_us_waters, operates_aus_nz_waters, operates_eu_waters, operates_chinese_waters, role')
         .or(`email.eq.${from},vessel_email.eq.${from}`)
-        .maybeSingle();
+        .limit(1);
 
-      profile = dbProfile;
+      profile = dbProfiles && dbProfiles.length > 0 ? dbProfiles[0] : null;
 
       if (profileErr) {
         console.warn('Supabase profile query encountered error:', profileErr.message);
