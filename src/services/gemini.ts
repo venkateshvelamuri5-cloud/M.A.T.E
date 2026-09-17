@@ -228,6 +228,22 @@ ${query}
         console.log(`[LLM Router] Routing to Sarvam AI model: ${sarvamModel}`);
         console.log(`[LLM Router] Sending Query to Sarvam:`, query);
         
+        // [Safety Guard] Sarvam AI has a strict 32,000 token limit.
+        let finalUserMessage = userMessage;
+        if (finalUserMessage.length > 100000) { // roughly 25k tokens
+          console.warn(`[Safety Guard] Sarvam AI payload exceeds safe limits (${finalUserMessage.length} chars). Stripping PDF context...`);
+          finalUserMessage = `
+=== MANDATORY GROUNDING CONTEXT (READ AND APPLY BEFORE RESPONDING) ===
+
+[Notice: Background company manuals were omitted from this query because they exceeded Sarvam AI's strict token limits.]
+
+=== END OF GROUNDING CONTEXT ===
+
+=== USER QUERY ===
+${query}
+`.trim();
+        }
+
         const response = await fetch('https://api.sarvam.ai/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -240,7 +256,7 @@ ${query}
             temperature: 0.7,
             messages: [
               { role: 'system', content: activeSystemPrompt },
-              { role: 'user', content: userMessage }
+              { role: 'user', content: finalUserMessage }
             ]
           })
         });
