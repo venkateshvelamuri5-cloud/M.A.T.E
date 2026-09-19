@@ -806,7 +806,13 @@ Mariner Profile:
 
       // === FEATURE 2: A3 Autocomplete Logic ===
       let a3Attachment = undefined;
-      if (matchedAgent && matchedAgent.slot_code === 'A3') {
+      let slotCode = null;
+      if (selectedAgentId) {
+        const { data: agentData } = await supabase.from('agents').select('slot_code').eq('id', selectedAgentId).maybeSingle();
+        slotCode = agentData?.slot_code;
+      }
+      
+      if (slotCode === 'A3') {
         const { FormFillerService } = require('../../../../src/services/formFiller');
         const filler = new FormFillerService();
         const result = await filler.processAutocomplete(userId, selectedAgentId!, scrubbedText, gemini);
