@@ -23,6 +23,7 @@ interface Agent {
   system_prompt: string;
   slot_code?: string | null;
   instructions?: string | null;
+  custom_questions?: string[] | null;
   keywords?: string | null;
   is_locked?: boolean;
   llm_provider?: string;
@@ -480,6 +481,7 @@ export default function AnalystPortal() {
   const [editDesc, setEditDesc] = useState('');
   const [editPrompt, setEditPrompt] = useState('');
   const [editInstructions, setEditInstructions] = useState('');
+  const [editCustomQuestions, setEditCustomQuestions] = useState<string[]>([]);
   const [editKeywords, setEditKeywords] = useState(''); // Comma-separated routing keywords
   const [editIsLocked, setEditIsLocked] = useState(false);
   const [editLinkedFiles, setEditLinkedFiles] = useState<string[]>([]); // Array of fileIds linked to active slot
@@ -820,6 +822,7 @@ export default function AnalystPortal() {
       setEditDesc(existing.description);
       setEditPrompt(existing.system_prompt);
       setEditInstructions(existing.instructions || '');
+        setEditCustomQuestions(existing.custom_questions || []);
       setEditKeywords(existing.keywords || '');
       setEditIsLocked(existing.is_locked || false);
       setEditLlmProvider(existing.llm_provider || 'groq');
@@ -834,6 +837,7 @@ export default function AnalystPortal() {
       setEditDesc(template?.placeholder1 || '');
       setEditPrompt(template?.systemDirective || '');
       setEditInstructions(template?.emailExample || '');
+        setEditCustomQuestions([]);
       setEditKeywords('');
       setEditIsLocked(false);
       setEditLinkedFiles([]);

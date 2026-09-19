@@ -29,6 +29,7 @@ interface Agent {
   system_prompt: string;
   slot_code?: string | null;
   instructions?: string | null;
+  custom_questions?: string[] | null;
   is_locked?: boolean;
 }
 
@@ -457,6 +458,7 @@ export default function UserDashboard() {
   // Dashboard metrics states
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agentTemplates, setAgentTemplates] = useState<AgentTemplate[]>([]);
+  const [userAnswers, setUserAnswers] = useState<Record<string, Record<string, string>>>({});
   const [interactionsCount, setInteractionsCount] = useState(0);
   const [maxInteractions, setMaxInteractions] = useState(10);
   const [subscriptionPlan, setSubscriptionPlan] = useState('free');
@@ -934,6 +936,23 @@ export default function UserDashboard() {
         setAgentTemplates(dbTemplates);
       }
 
+      // 6. Fetch User Answers for modules
+      const { data: settingsData } = await supabase
+        .from('user_agent_settings')
+        .select('*')
+        .eq('user_id', uid);
+        
+      if (settingsData) {
+        const answersMap: Record<string, Record<string, string>> = {};
+        settingsData.forEach(row => {
+          if (row.answers) {
+            answersMap[row.agent_id] = row.answers;
+          }
+        });
+        setUserAnswers(answersMap);
+      }
+
+
     } catch (err) {
       console.error('Failed to query user metrics from Supabase:', err);
       setStatusMsg('Could not fetch active workspace profile details.');
@@ -1048,6 +1067,17 @@ export default function UserDashboard() {
       }
 
       setStatusMsg("Workspace settings updated successfully.");
+      
+      // Upsert module answers
+      const agentIdsWithAnswers = Object.keys(userAnswers);
+      for (const aid of agentIdsWithAnswers) {
+        await supabase.from('user_agent_settings').upsert({
+          user_id: userId,
+          agent_id: aid,
+          answers: userAnswers[aid]
+        });
+      }
+
       setIsSettingsOpen(false);
       fetchUserData(userId, emailInput);
     } catch (err) {
@@ -2072,6 +2102,48 @@ export default function UserDashboard() {
                   </label>
                 </div>
               </div>
+
+              
+              {/* Dynamic Module Specific Settings */}
+              {agents.filter(a => a.custom_questions && a.custom_questions.length > 0).length > 0 && (
+                <div className="mt-6 border-t border-border/60 pt-6 space-y-6">
+                  <h4 className="text-xs font-black text-deep uppercase tracking-wider">// Module Specific Configurations</h4>
+                  {agents.filter(a => a.custom_questions && a.custom_questions.length > 0).map(agent => (
+                    <div key={agent.id} className="border border-border/60 rounded-xl overflow-hidden shadow-sm">
+                      <div className="bg-[#1d577a] px-4 py-2.5 flex items-center justify-between">
+                        <span className="font-bold text-xs uppercase tracking-wide text-white">
+                          {agent.slot_code} - {agent.name}
+                        </span>
+                      </div>
+                      <div className="bg-[#e2e8f0]/30">
+                        {agent.custom_questions!.map((q, idx) => (
+                          <div key={idx} className="flex border-b border-white last:border-b-0 min-h-[40px]">
+                            <div className="w-1/2 flex items-center px-4 border-r border-white text-[11px] text-zinc-700 bg-zinc-200/50 font-medium">
+                              ({idx + 1}) {q}
+                            </div>
+                            <div className="w-1/2 bg-zinc-200/50">
+                              <input 
+                                type="text"
+                                value={(userAnswers[agent.id] && userAnswers[agent.id][q]) || ''}
+                                onChange={(e) => {
+                                  setUserAnswers(prev => ({
+                                    ...prev,
+                                    [agent.id]: {
+                                      ...(prev[agent.id] || {}),
+                                      [q]: e.target.value
+                                    }
+                                  }));
+                                }}
+                                className="w-full h-full px-4 bg-transparent text-[11px] text-foreground outline-none font-medium"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="pt-4 flex justify-end gap-2 border-t border-border/60">
                 <button 
