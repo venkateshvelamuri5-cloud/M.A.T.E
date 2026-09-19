@@ -109,6 +109,25 @@ export default function SignupPage() {
         )}
 
         <form onSubmit={handleSignup} className="space-y-6">
+          {/* Section: Google Auth */}
+          <div className="space-y-4">
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await supabase.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: { redirectTo: `${window.location.origin}/dashboard` }
+                  });
+                } catch (err) {}
+              }}
+              className="w-full py-3 rounded-xl border border-border bg-[#FAF9F6] hover:bg-[#F5F4F0] text-foreground font-semibold text-xs uppercase tracking-wider transition flex items-center justify-center gap-2"
+            >
+              Continue with Google
+            </button>
+            <div className="text-center text-xs text-muted-foreground uppercase tracking-widest font-bold">OR</div>
+          </div>
+
           {/* Section 1: Officer Credentials */}
           <div className="space-y-4">
             <h3 className="text-xs font-black text-deep uppercase tracking-wider border-b border-border/60 pb-1.5">// Mariner Credentials</h3>

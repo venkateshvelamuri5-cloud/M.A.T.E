@@ -383,6 +383,7 @@ export async function POST(req: NextRequest) {
     const scrubbedText = await gemini.cleanAndScrubText(bodyText);
 
     let processedResult = scrubbedText;
+    let a3Attachment: any = undefined;
     let fileReferenceContext = '';
     const pdfAttachments: Array<{ data: Buffer; mimeType: string; name?: string }> = [];
 
@@ -805,7 +806,6 @@ Mariner Profile:
       }
 
       // === FEATURE 2: A3 Autocomplete Logic ===
-      let a3Attachment = undefined;
       let slotCode = null;
       if (selectedAgentId) {
         const { data: agentData } = await supabase.from('agents').select('slot_code').eq('id', selectedAgentId).maybeSingle();
