@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase } from '../../src/supabase-client';
 import { Upload, FileText, Database, Plus, CheckCircle, ArrowLeft, Trash2, TrendingUp, DollarSign, Activity, Users, Lock, LogOut, CheckCircle2, Home, Settings, Shield, AlertCircle, BookOpen, Save, X } from 'lucide-react';
+import UserManagementTab from './UserManagementTab';
 
 interface KnowledgeFile {
   id: string;
@@ -1337,6 +1338,10 @@ export default function AnalystPortal() {
             {renderCategoryGrid(categoryNames.F, 'F')}
           </div>
         </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto mt-8 relative z-10">
+        <UserManagementTab />
       </div>
 
       {/* Global Knowledge Base Manager */}
