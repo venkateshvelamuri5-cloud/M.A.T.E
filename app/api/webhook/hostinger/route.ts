@@ -755,8 +755,6 @@ export async function POST(req: NextRequest) {
 
                 const docClassification = isCompanyManual ? 'Company Manual / Policy (Primary Authority)' : 'User Workspace Document';
                 const formattedDocContext = `\n\n=== GROUNDING DOCUMENT ===\nFilename: ${fileRef.name}\nClassification: ${docClassification}\n\nRelevant Excerpts:\n"""\n${cleanedText}\n"""\n==========================\n`;
-
-                // Safety budget limit removed as requested: include full context
                 fileReferenceContext += formattedDocContext;
               }
             }
@@ -785,14 +783,47 @@ Mariner Profile:
 - User Email: ${profile?.email || from}
 `;
 
-      processedResult = await gemini.runGroundedQuery(
-        scrubbedText, 
-        `${marinerProfilePrompt}\n\n${fileReferenceContext}`,
-        pdfAttachments,
-        selectedAgentPrompt,
-        selectedAgentLlmProvider,
-        selectedAgentId || undefined
-      );
+      // === FEATURE 1: Fetch dynamic module answers ===
+      if (selectedAgentId && userId) {
+        try {
+          const { data: settingsData } = await supabase
+            .from('user_agent_settings')
+            .select('answers')
+            .eq('user_id', userId)
+            .eq('agent_id', selectedAgentId)
+            .maybeSingle();
+
+          if (settingsData && settingsData.answers && Object.keys(settingsData.answers).length > 0) {
+            const answersContext = Object.entries(settingsData.answers)
+              .map(([q, a]) => `Q: ${q}\nA: ${a}`)
+              .join('\n\n');
+            fileReferenceContext = `=== USER MODULE SETTINGS ===\n${answersContext}\n==========================\n\n${fileReferenceContext}`;
+          }
+        } catch (settingsErr) {
+          console.warn('Failed to fetch user agent settings:', (settingsErr as Error).message);
+        }
+      }
+
+      // === FEATURE 2: A3 Autocomplete Logic ===
+      let a3Attachment = undefined;
+      if (matchedAgent && matchedAgent.slot_code === 'A3') {
+        const { FormFillerService } = require('../../../../src/services/formFiller');
+        const filler = new FormFillerService();
+        const result = await filler.processAutocomplete(userId, selectedAgentId!, scrubbedText, gemini);
+        processedResult = result.text;
+        if (result.attachment) {
+          a3Attachment = result.attachment;
+        }
+      } else {
+        processedResult = await gemini.runGroundedQuery(
+          scrubbedText, 
+          `${marinerProfilePrompt}\n\n${fileReferenceContext}`,
+          pdfAttachments,
+          selectedAgentPrompt,
+          selectedAgentLlmProvider,
+          selectedAgentId || undefined
+        );
+      }
 
       if (processedResult) {
         processedResult = processedResult.replace(/gemini/gi, 'Generic AI');
@@ -875,6 +906,10 @@ Mariner Profile:
 
     // Format output spacing and markup structure to styled HTML
     const formattedHtml = wrapInEmailTemplate(formatMarkdownToHtml(processedResult), senderRank, senderName, vesselName, queryRef);
+
+    if (a3Attachment) {
+      emailAttachments.push(a3Attachment);
+    }
 
     // 6. Send Outbound SMTP Email response back
     const mailResponse = await smtp.sendMail({
