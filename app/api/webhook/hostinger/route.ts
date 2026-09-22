@@ -4,6 +4,7 @@ import { GeminiService } from '../../../../src/services/gemini';
 import { GeneratorService } from '../../../../src/services/generator';
 import { SmtpService } from '../../../../src/services/smtp';
 import { FileProcessor } from '../../../../src/services/fileProcessor';
+import { FormFillerService } from '../../../../src/services/formFiller';
 
 /**
  * POST handler for Hostinger Webhook
@@ -813,7 +814,6 @@ Mariner Profile:
       }
       
       if (slotCode === 'A3') {
-        const { FormFillerService } = require('../../../../src/services/formFiller');
         const filler = new FormFillerService();
         const result = await filler.processAutocomplete(userId, selectedAgentId!, scrubbedText, gemini);
         processedResult = result.text;
