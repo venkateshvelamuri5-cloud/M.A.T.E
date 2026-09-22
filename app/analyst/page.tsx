@@ -1881,6 +1881,50 @@ export default function AnalystPortal() {
                           If checked, manuals associated with this agent or selected by the user will be passed in full to the prompt context without running the RAG keyword filter. (Highly recommended if manual referencing is failing).
                         </p>
                       </div>
+
+                      {/* Dynamic Module Questions Configuration */}
+                      <div className="mt-8 border-t border-border pt-6">
+                        <h4 className="text-[10px] font-black text-deep uppercase tracking-wider mb-4 border-b border-border/60 pb-1.5">// Dynamic Queries</h4>
+                        
+                        <div className="bg-[#245869] text-white font-bold text-[9px] uppercase tracking-wider p-2 flex justify-between items-center rounded-t-sm">
+                          <span>+ ADD MORE QUERY // - REMOVE LAST QUERY</span>
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => setEditCustomQuestions([...editCustomQuestions, ''])} className="hover:text-gold transition font-bold px-2 py-1 bg-black/20 rounded">ADD</button>
+                            <button type="button" onClick={() => setEditCustomQuestions(editCustomQuestions.slice(0, -1))} className="hover:text-red-400 transition font-bold px-2 py-1 bg-black/20 rounded">REMOVE</button>
+                          </div>
+                        </div>
+                        
+                        <div className="border border-border/60 border-t-0 bg-[#e2e8f0]/40 rounded-b-sm">
+                          {editCustomQuestions.length === 0 ? (
+                            <div className="p-4 text-[10px] text-muted-foreground text-center font-medium italic">
+                              No custom queries configured. Add one above.
+                            </div>
+                          ) : (
+                            editCustomQuestions.map((q, idx) => (
+                              <div key={idx} className="flex border-b border-white last:border-b-0 h-10">
+                                <div className="w-12 flex items-center justify-center border-r border-white text-[11px] text-zinc-700 bg-zinc-200/50 font-medium">({idx + 1})</div>
+                                <div className="flex-1 bg-zinc-200/50">
+                                  <input 
+                                    type="text"
+                                    value={q}
+                                    onChange={(e) => {
+                                      const newQs = [...editCustomQuestions];
+                                      newQs[idx] = e.target.value;
+                                      setEditCustomQuestions(newQs);
+                                    }}
+                                    placeholder="Enter query here..."
+                                    className="w-full h-full px-3 bg-transparent text-[11px] text-foreground outline-none font-medium"
+                                  />
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                        <p className="mt-4 text-[10px] text-muted-foreground font-medium">
+                          <span className="font-bold text-foreground underline italic"># Note :-</span><br/>
+                          <span className="italic border-b border-[#245869] border-dashed text-foreground/80">So the settings page to have query for each module which the analyst can setup</span>
+                        </p>
+                      </div>
                     </>
                   )}
                 </div>
