@@ -67,7 +67,7 @@ export default function LoginPage() {
           </Link>
           <h2 className="font-display text-2xl font-semibold text-deep">Sign In to M.A.T.E</h2>
           <p className="text-muted-foreground text-xs mt-1 text-center">
-            Access your isolated certificate and voyage logs space.
+            Reducing Paper Work. Made by Seafarers for Seafarers.
           </p>
         </div>
 
