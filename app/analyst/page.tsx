@@ -879,6 +879,7 @@ export default function AnalystPortal() {
           description: editDesc,
           system_prompt: editPrompt,
           instructions: editInstructions,
+            custom_questions: editCustomQuestions,
           keywords: editKeywords,
           is_locked: editIsLocked,
           llm_provider: editLlmProvider,
@@ -1978,6 +1979,7 @@ export default function AnalystPortal() {
                                     description: editDesc,
                                     system_prompt: editPrompt,
                                     instructions: editInstructions,
+            custom_questions: editCustomQuestions,
                                     is_locked: editIsLocked,
                                     llm_provider: editLlmProvider
                                   }).select().single();
