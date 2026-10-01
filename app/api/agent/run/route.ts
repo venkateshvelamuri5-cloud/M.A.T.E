@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     // 1. Fetch user profile
     const { data: profile, error: profileErr } = await supabase
       .from('profiles')
-      .select('role, email, full_name, rank, company_name, subscription_plan, vessel_name, vessel_type, operator_name, grt, has_pump_room, pump_system_type, has_bow_thruster, carries_chemical_cargo, has_egcs, egcs_type, operates_us_waters, operates_aus_nz_waters, operates_eu_waters, operates_chinese_waters')
+      .select('role, email, vessel_email, full_name, rank, company_name, subscription_plan, vessel_name, vessel_type, operator_name, grt, has_pump_room, pump_system_type, has_bow_thruster, carries_chemical_cargo, has_egcs, egcs_type, operates_us_waters, operates_aus_nz_waters, operates_eu_waters, operates_chinese_waters')
       .eq('id', userId)
       .maybeSingle();
 
@@ -386,7 +386,7 @@ Mariner Profile:
       try {
         const smtp = new SmtpService();
         await smtp.sendMail({
-          to: profile.email,
+          to: profile.vessel_email || profile.email,
           subject: `M.A.T.E Generated Response: ${agent.name}`,
           text: `Dear Officer,\n\nHere is the generated output from the M.A.T.E system for the agent slot: ${agent.name}.\n\n=== Generated Response ===\n\n${processedResult}\n\nBest regards,\nM.A.T.E Crew`
         });
