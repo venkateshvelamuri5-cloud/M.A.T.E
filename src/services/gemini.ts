@@ -2,6 +2,57 @@ import Groq from 'groq-sdk';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../supabase-client';
 import pdfParse from 'pdf-parse';
+import { FileProcessor } from './fileProcessor';
+
+const DOC_BLOCK_MARKER = '\n\n=== GROUNDING DOCUMENT ===';
+
+/**
+ * Rough token estimate. English averages ~4 characters per token; 3.5 errs high for safety.
+ */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 3.5);
+}
+
+/**
+ * Fits grounding context into a token budget. The leading profile/settings context is always kept,
+ * document blocks are kept in priority order (earlier = higher priority), the first block that
+ * overflows is narrowed to its keyword-relevant excerpts (or truncated), and the rest are omitted
+ * with a notice naming them.
+ */
+function fitContextToBudget(context: string, budgetTokens: number, keywords: string[]): string {
+  const [head, ...docBlocks] = context.split(DOC_BLOCK_MARKER);
+  const budgetChars = Math.max(0, Math.floor(budgetTokens * 3.5));
+  let result = head.length > budgetChars ? head.slice(0, budgetChars) : head;
+  const omitted: string[] = [];
+
+  for (const rawBlock of docBlocks) {
+    const block = DOC_BLOCK_MARKER + rawBlock;
+    const remaining = budgetChars - result.length;
+    if (omitted.length === 0 && block.length <= remaining) {
+      result += block;
+      continue;
+    }
+    const filename = rawBlock.match(/Filename: (.*)/)?.[1]?.trim() || 'Unnamed document';
+    if (omitted.length === 0 && remaining > 2000) {
+      const narrowed = FileProcessor.extractRelevantChunks(rawBlock, keywords);
+      const candidate = narrowed && narrowed.length < rawBlock.length
+        ? `${DOC_BLOCK_MARKER}\nFilename: ${filename}\n\nRelevant Excerpts:\n"""\n${narrowed}\n"""\n==========================\n`
+        : block;
+      result += candidate.length <= remaining
+        ? candidate
+        : `${candidate.slice(0, remaining - 200)}\n[...truncated to fit the model's context limit]\n"""\n==========================\n`;
+      console.log(`[Safety Guard] Narrowed "${filename}" to fit the remaining context budget.`);
+      continue;
+    }
+    omitted.push(filename);
+  }
+
+  if (omitted.length > 0) {
+    console.warn(`[Safety Guard] Omitted documents to fit context budget: ${omitted.join(', ')}`);
+    result += `\n\n[Notice: These documents were omitted because they exceeded the model's context limit: ${omitted.join(', ')}]\n`;
+  }
+  return result;
+}
 
 /**
  * Gemini Service Class
@@ -96,7 +147,6 @@ export class GeminiService {
           if (parsed?.text) {
             let textToInclude = parsed.text;
             if (textToInclude.length > 25000) {
-              const { FileProcessor } = require('./fileProcessor');
               textToInclude = FileProcessor.extractRelevantChunks(textToInclude, keywords);
             }
             if (textToInclude) {
@@ -119,10 +169,10 @@ export class GeminiService {
 
       // Build a clearly structured user message that explicitly directs the AI
       // on how to prioritize vessel settings and uploaded company documents
-      const userMessage = `
+      const buildUserMessage = (groundingContext: string) => `
 === MANDATORY GROUNDING CONTEXT (READ AND APPLY BEFORE RESPONDING) ===
 
-${fullReferenceContext}
+${groundingContext}
 
 === END OF GROUNDING CONTEXT ===
 
@@ -140,6 +190,7 @@ INSTRUCTIONS FOR USING THE ABOVE CONTEXT:
 === USER QUERY ===
 ${query}
 `.trim();
+      const userMessage = buildUserMessage(fullReferenceContext);
 
       const normalizedProvider = (llmProvider || 'groq').toLowerCase();
       console.log(`[LLM Router] Grounding query using engine provider: ${normalizedProvider}`);
@@ -224,24 +275,20 @@ ${query}
         return data.choices[0]?.message?.content?.trim() || 'No response generated from Perplexity.';
 
       } else if (normalizedProvider === 'sarvam') {
-        const sarvamModel = 'sarvam-105b-conversations';
+        const sarvamModel = 'sarvam-105b';
         console.log(`[LLM Router] Routing to Sarvam AI model: ${sarvamModel}`);
         console.log(`[LLM Router] Sending Query to Sarvam:`, query);
         
-        // [Safety Guard] Sarvam AI has a strict 32,000 token limit.
+        // [Safety Guard] sarvam-105b has a 128K-token context window shared by prompt and output.
+        // Trim lower-priority documents to fit instead of dropping all grounding context.
+        const sarvamMaxTokens = Number(process.env.SARVAM_MAX_TOKENS) || 8192;
+        const sarvamContextTokens = 128000;
+        const promptOverheadTokens = estimateTokens(activeSystemPrompt) + estimateTokens(buildUserMessage('')) + 1000;
+        const contextBudgetTokens = sarvamContextTokens - sarvamMaxTokens - promptOverheadTokens;
         let finalUserMessage = userMessage;
-        if (finalUserMessage.length > 100000) { // roughly 25k tokens
-          console.warn(`[Safety Guard] Sarvam AI payload exceeds safe limits (${finalUserMessage.length} chars). Stripping PDF context...`);
-          finalUserMessage = `
-=== MANDATORY GROUNDING CONTEXT (READ AND APPLY BEFORE RESPONDING) ===
-
-[Notice: Background company manuals were omitted from this query because they exceeded Sarvam AI's strict token limits.]
-
-=== END OF GROUNDING CONTEXT ===
-
-=== USER QUERY ===
-${query}
-`.trim();
+        if (estimateTokens(fullReferenceContext) > contextBudgetTokens) {
+          console.warn(`[Safety Guard] Grounding context (~${estimateTokens(fullReferenceContext)} tokens) exceeds Sarvam budget (${contextBudgetTokens} tokens). Trimming...`);
+          finalUserMessage = buildUserMessage(fitContextToBudget(fullReferenceContext, contextBudgetTokens, keywords));
         }
 
         const response = await fetch('https://api.sarvam.ai/v1/chat/completions', {
@@ -252,7 +299,7 @@ ${query}
           },
           body: JSON.stringify({
             model: sarvamModel,
-            max_tokens: 8192,
+            max_tokens: sarvamMaxTokens,
             temperature: 0.7,
             messages: [
               { role: 'system', content: activeSystemPrompt },
@@ -269,6 +316,10 @@ ${query}
           throw new Error(data.error.message || JSON.stringify(data.error));
         }
         
+        if (data.usage) {
+          console.log(`[LLM Router] Sarvam usage: prompt=${data.usage.prompt_tokens} completion=${data.usage.completion_tokens} total=${data.usage.total_tokens}`);
+        }
+
         const messageObj = data.choices?.[0]?.message || {};
         const content = messageObj.content?.trim();
         const reasoning = messageObj.reasoning_content?.trim();
