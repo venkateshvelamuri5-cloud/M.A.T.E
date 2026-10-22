@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../../../src/supabase-client';
+import { requestIngestion } from '../../../../src/services/documents/client';
 import { Anchor, Home, Settings, Lock, ArrowLeft, Download, Clipboard, Inbox, Upload, FileText } from 'lucide-react';
 
 interface UploadedFile {
@@ -582,6 +583,7 @@ export default function ModulePage({ params }: { params: { slot_code: string } }
         .single();
 
       if (dbErr) throw dbErr;
+      if (newFile?.id) requestIngestion(newFile.id);
 
       await supabase.from('interactions_log').insert({
         user_id: userId,

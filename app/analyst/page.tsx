@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase } from '../../src/supabase-client';
+import { requestIngestion } from '../../src/services/documents/client';
 import { Upload, FileText, Database, Plus, CheckCircle, ArrowLeft, Trash2, TrendingUp, DollarSign, Activity, Users, Lock, LogOut, CheckCircle2, Home, Settings, Shield, AlertCircle, BookOpen, Save, X } from 'lucide-react';
 import UserManagementTab from './UserManagementTab';
 
@@ -14,6 +15,13 @@ interface KnowledgeFile {
   storage_path: string;
   agent_id?: string | null;
   file_type?: string;
+  ingest_status?: string | null;
+  ingest_error?: string | null;
+  page_count?: number | null;
+  token_count?: number | null;
+  section_count?: number | null;
+  chunk_structure?: string | null;
+  ocr_page_count?: number | null;
 }
 
 interface Agent {
@@ -684,40 +692,65 @@ export default function AnalystPortal() {
   const handleUploadKB = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || !e.target.files[0]) return;
 
-    const file = e.target.files[0];
-    const fileSizeMB = parseFloat((file.size / (1024 * 1024)).toFixed(2));
-    setStatusMsg('Uploading to knowledge-base storage...');
+    // Bulk upload: each file is uploaded and queued for processing in turn.
+    for (const file of Array.from(e.target.files)) {
+      const fileSizeMB = parseFloat((file.size / (1024 * 1024)).toFixed(2));
+      setStatusMsg(`Uploading "${file.name}" to knowledge-base storage...`);
 
+      try {
+        const storagePath = `general/${Date.now()}_${file.name}`;
+        const { error: uploadErr } = await supabase.storage
+          .from('knowledge-base')
+          .upload(storagePath, file);
+
+        if (uploadErr) throw uploadErr;
+
+        const { data: { session } } = await supabase.auth.getSession();
+        const currentUserId = session?.user?.id || '11111111-1111-1111-1111-111111111111';
+
+        const { data: newFile, error: dbErr } = await supabase
+          .from('user_files')
+          .insert({
+            user_id: currentUserId,
+            name: file.name,
+            storage_path: storagePath,
+            file_type: 'knowledge_base',
+            file_size_mb: fileSizeMB,
+            agent_id: null
+          })
+          .select()
+          .single();
+
+        if (dbErr) throw dbErr;
+        if (newFile?.id) requestIngestion(newFile.id).then(fetchAnalyticsAndFiles);
+
+        setStatusMsg(`Uploaded "${file.name}". Processing it into searchable sections...`);
+        fetchAnalyticsAndFiles();
+
+      } catch (err) {
+        console.error(err);
+        setStatusMsg(`Upload error for "${file.name}": ${(err as Error).message}`);
+      }
+    }
+  };
+
+  // Processes files uploaded before section search existed (or that failed), a batch per call.
+  const handleProcessExistingFiles = async () => {
+    setStatusMsg('Processing existing documents into searchable sections...');
     try {
-      const storagePath = `general/${Date.now()}_${file.name}`;
-      const { error: uploadErr } = await supabase.storage
-        .from('knowledge-base')
-        .upload(storagePath, file);
-
-      if (uploadErr) throw uploadErr;
-
       const { data: { session } } = await supabase.auth.getSession();
-      const currentUserId = session?.user?.id || '11111111-1111-1111-1111-111111111111';
-
-      const { error: dbErr } = await supabase
-        .from('user_files')
-        .insert({
-          user_id: currentUserId,
-          name: file.name,
-          storage_path: storagePath,
-          file_type: 'knowledge_base',
-          file_size_mb: fileSizeMB,
-          agent_id: null
-        });
-
-      if (dbErr) throw dbErr;
-
-      setStatusMsg(`Successfully uploaded and indexed "${file.name}" in knowledge base.`);
+      const res = await fetch('/api/documents/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+        body: JSON.stringify({ backfill: true, limit: 20 }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || `Status ${res.status}`);
+      const failed = (result.processed || []).filter((r: any) => r.status === 'failed').length;
+      setStatusMsg(`Processed ${result.processed?.length || 0} document(s)${failed ? `, ${failed} failed` : ''}. ${result.remaining ? `${result.remaining} still waiting: run again.` : 'All documents are processed.'}`);
       fetchAnalyticsAndFiles();
-
     } catch (err) {
-      console.error(err);
-      setStatusMsg(`Upload error: ${(err as Error).message}`);
+      setStatusMsg(`Processing error: ${(err as Error).message}`);
     }
   };
 
@@ -1365,9 +1398,17 @@ export default function AnalystPortal() {
                 type="file" 
                 onChange={handleUploadKB} 
                 className="hidden" 
+                multiple
                 accept=".pdf,.docx,.doc,.txt,.md,.rtf,.xlsx,.xls,.csv"
               />
             </label>
+            <button
+              type="button"
+              onClick={handleProcessExistingFiles}
+              className="ml-2 inline-flex items-center gap-2 px-4 py-2.5 border-2 border-[#1b1b1b] bg-white hover:bg-zinc-50 text-zinc-800 rounded-lg text-xs font-bold uppercase tracking-wider transition"
+            >
+              Process Existing Files
+            </button>
           </div>
         </div>
 
@@ -1388,6 +1429,23 @@ export default function AnalystPortal() {
                   </div>
                   <div className="text-[10px] text-zinc-500 font-medium">
                     Size: {file.file_size_mb} MB | Mode: {file.file_type === 'knowledge_base' ? 'Global KB' : 'Slot Reference'}
+                  </div>
+                  <div className="text-[10px] font-medium mt-1">
+                    {file.ingest_status === 'ready' ? (
+                      <span className="text-emerald-700">
+                        Ready: {file.page_count} pages, {file.section_count} sections ({file.chunk_structure}), ~{(file.token_count || 0).toLocaleString()} tokens
+                        {file.ocr_page_count ? `, ${file.ocr_page_count} pages OCR'd` : ''}
+                      </span>
+                    ) : file.ingest_status === 'failed' ? (
+                      <span className="text-red-650">Processing failed: {file.ingest_error}</span>
+                    ) : file.ingest_status === 'processing' || file.ingest_status === 'queued' ? (
+                      <span className="text-amber-700">Processing into sections...</span>
+                    ) : (
+                      <span className="text-zinc-450">Not processed yet (read whole on each query)</span>
+                    )}
+                    {file.ingest_status === 'ready' && file.ingest_error && (
+                      <div className="text-amber-700">{file.ingest_error}</div>
+                    )}
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 mt-4 border-t border-zinc-100 pt-3">
@@ -2004,6 +2062,7 @@ export default function AnalystPortal() {
                                   .single();
 
                                 if (dbErr) throw dbErr;
+                                if (fileData?.id) requestIngestion(fileData.id).then(fetchAnalyticsAndFiles);
 
                                 setStatusMsg(`Successfully uploaded "${file.name}"!`);
                                 // Append file details to local selection and refresh indexed docs

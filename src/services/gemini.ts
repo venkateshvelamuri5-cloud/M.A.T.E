@@ -3,15 +3,10 @@ import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../supabase-client';
 import pdfParse from 'pdf-parse';
 import { FileProcessor } from './fileProcessor';
+import { estimateTokens } from './documents/tokens';
+import { isRedactionServiceConfigured, redactTexts } from './documents/redaction';
 
 const DOC_BLOCK_MARKER = '\n\n=== GROUNDING DOCUMENT ===';
-
-/**
- * Rough token estimate. English averages ~4 characters per token; 3.5 errs high for safety.
- */
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 3.5);
-}
 
 /**
  * Fits grounding context into a token budget. The leading profile/settings context is always kept,
@@ -95,8 +90,16 @@ export class GeminiService {
    * Cleans text input, scrubs PII, and formats it using Llama 3.1 8B via Groq
    */
   async cleanAndScrubText(rawText: string): Promise<string> {
-    // 1. Local basic scrub first
-    const preScrubbed = this.scrubPIILocal(rawText);
+    // 1. Scrub on our own servers first: the Presidio service when configured (names, addresses,
+    //    IDs), otherwise local patterns. Only the scrubbed text is sent to Groq below.
+    let preScrubbed = this.scrubPIILocal(rawText);
+    if (isRedactionServiceConfigured()) {
+      try {
+        [preScrubbed] = await redactTexts([rawText]);
+      } catch (redactErr) {
+        console.error('Redaction service failed, using local scrubbing only:', (redactErr as Error).message);
+      }
+    }
 
     try {
       const response = await this.groq.chat.completions.create({

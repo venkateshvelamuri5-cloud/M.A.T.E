@@ -13,5 +13,14 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # PII redaction for user documents (see services/redactor). Set REDACTION_SERVICE_URL in the app.
+  redactor:
+    build: ./services/redactor
+    container_name: mate-redactor
+    environment:
+      REDACTION_SERVICE_TOKEN: ${REDACTION_SERVICE_TOKEN:-}
+    ports:
+      - "8000:8000"
+
 volumes:
   postgres_data:

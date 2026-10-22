@@ -5,6 +5,7 @@ import { GeneratorService } from '../../../../src/services/generator';
 import { SmtpService } from '../../../../src/services/smtp';
 import { FileProcessor } from '../../../../src/services/fileProcessor';
 import { FormFillerService } from '../../../../src/services/formFiller';
+import { buildRetrievedContext, classifyDocument, contextBudgetFor, RetrievalFile } from '../../../../src/services/documents/retrieval';
 
 /**
  * POST handler for Hostinger Webhook
@@ -608,7 +609,7 @@ export async function POST(req: NextRequest) {
         if (selectedAgentId) {
           const { data } = await supabase
             .from('user_files')
-            .select('storage_path, name, file_type, user_id, agent_id')
+            .select('*')
             .eq('agent_id', selectedAgentId);
           if (data) agentFiles = data;
         }
@@ -616,7 +617,7 @@ export async function POST(req: NextRequest) {
         let userPersonalFiles: any[] = [];
         const { data: pFiles } = await supabase
           .from('user_files')
-          .select('storage_path, name, file_type, user_id, agent_id')
+          .select('*')
           .eq('user_id', userId)
           .not('file_type', 'eq', 'knowledge_base');
         if (pFiles) userPersonalFiles = pFiles;
@@ -624,7 +625,7 @@ export async function POST(req: NextRequest) {
         let globalKBFiles: any[] = [];
         const { data: gFiles } = await supabase
           .from('user_files')
-          .select('storage_path, name, file_type, user_id, agent_id')
+          .select('*')
           .eq('file_type', 'knowledge_base')
           .is('agent_id', null);
         if (gFiles) globalKBFiles = gFiles;
@@ -642,11 +643,26 @@ export async function POST(req: NextRequest) {
 
         FileProcessor.resetCache();
 
+        const readyFiles: RetrievalFile[] = [];
         if (filesToDownload.length > 0) {
           console.log(`Total files queried for hybrid context: ${filesToDownload.length}`);
           for (const fileRef of filesToDownload) {
             // Skip files that were uploaded as attachments in this run to avoid duplicate contexts
             if (uploadedStoragePaths.has(fileRef.storage_path)) {
+              continue;
+            }
+
+            // Processed files are searched by section below instead of being downloaded and parsed.
+            if (fileRef.ingest_status === 'ready') {
+              const isAgentFile = Boolean(fileRef.agent_id) && fileRef.agent_id === selectedAgentId;
+              readyFiles.push({
+                id: fileRef.id,
+                name: fileRef.name,
+                token_count: fileRef.token_count,
+                scope: isAgentFile ? 'agent' : fileRef.file_type === 'knowledge_base' ? 'global' : 'user',
+                classification: classifyDocument(fileRef),
+                preferWhole: isAgentFile || bypassKeywordMatch,
+              });
               continue;
             }
 
@@ -761,6 +777,9 @@ export async function POST(req: NextRequest) {
               }
             }
           }
+        }
+        if (readyFiles.length > 0) {
+          fileReferenceContext += await buildRetrievedContext(readyFiles, keywords, contextBudgetFor(selectedAgentLlmProvider));
         }
       } catch (fileErr) {
         console.warn('Failed to query or parse user/agent files from Supabase Storage:', (fileErr as Error).message);

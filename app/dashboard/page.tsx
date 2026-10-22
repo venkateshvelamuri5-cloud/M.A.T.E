@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../src/supabase-client';
+import { requestIngestion } from '../../src/services/documents/client';
 import { Upload, Mail, CreditCard, Shield, AlertCircle, CheckCircle2, Anchor, LogIn, UserPlus, LogOut, FileText, History, ArrowLeft, Download, Clipboard, Server, Settings, ChevronRight, Home, Lock, BookOpen, X } from 'lucide-react';
 
 interface InteractionLog {
@@ -723,6 +724,7 @@ export default function UserDashboard() {
         .select()
         .single();
       if (dbErr) throw dbErr;
+      if (dbRow?.id) requestIngestion(dbRow.id);
       setStatusMsg(`"${file.name}" uploaded and selected for this run.`);
       if (dbRow?.id) {
         setWebRunSelectedFiles(prev => [...prev, dbRow.id]);
@@ -1134,7 +1136,7 @@ export default function UserDashboard() {
 
       if (uploadErr) throw uploadErr;
 
-      const { error: dbErr } = await supabase
+      const { data: newFile, error: dbErr } = await supabase
         .from('user_files')
         .insert({
           user_id: userId,
@@ -1142,9 +1144,12 @@ export default function UserDashboard() {
           storage_path: storagePath,
           file_type: fileExtension.substring(1),
           file_size_mb: fileSizeMB
-        });
+        })
+        .select()
+        .single();
 
       if (dbErr) throw dbErr;
+      if (newFile?.id) requestIngestion(newFile.id);
 
       await supabase.from('interactions_log').insert({
         user_id: userId,
