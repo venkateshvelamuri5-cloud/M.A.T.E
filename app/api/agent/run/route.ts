@@ -135,7 +135,8 @@ export async function POST(req: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(1);
 
-    if (cachedLogs && cachedLogs.length > 0) {
+    // Earlier empty replies were saved as "Completed"; never serve one of those from the cache.
+    if (cachedLogs && cachedLogs.length > 0 && !/^No response generated/.test(cachedLogs[0].email_response || '')) {
       const cachedResponse = `[CACHED RESPONSE - Last 24 Hours]\n\n${cachedLogs[0].email_response}`;
       return NextResponse.json({
         success: true,
