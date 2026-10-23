@@ -6,6 +6,7 @@ import { SmtpService } from '../../../../src/services/smtp';
 import { FileProcessor } from '../../../../src/services/fileProcessor';
 import { FormFillerService } from '../../../../src/services/formFiller';
 import { buildRetrievedContext, classifyDocument, contextBudgetFor, RetrievalFile } from '../../../../src/services/documents/retrieval';
+import { analystIds, consumeRun, limitMessage } from '../../../../src/services/limits';
 
 /**
  * POST handler for Hostinger Webhook
@@ -324,7 +325,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (limitCount >= limitMax) {
-      return NextResponse.json({ error: 'Limit exceeded: 10/10 community interactions used. Upgrade via Stripe.' }, { status: 403 });
+      return NextResponse.json({ error: limitMessage(limitCount, limitMax) }, { status: 403 });
     }
 
     // Check if the user has already sent an email with the exact same content and received a response.
@@ -406,7 +407,7 @@ export async function POST(req: NextRequest) {
 
         // ── LAYER 1: Slot code override from email subject ──────────────────
         // Matches: [A1], A1:, A1 -, A1 — in subject line
-        const slotCodeMatch = subject.match(/[\[\(]?\b([A-F][1-4])\b[\]\)]?/i);
+        const slotCodeMatch = subject.match(/[\[\(]?\b([A-F][1-6])\b[\]\)]?/i);
         let matchedAgent = null;
 
         if (slotCodeMatch) {
@@ -630,7 +631,9 @@ export async function POST(req: NextRequest) {
           .select('*')
           .eq('file_type', 'knowledge_base')
           .is('agent_id', null);
-        if (gFiles) globalKBFiles = gFiles;
+        // Only documents an analyst shared count as company documents.
+        const trustedOwners = await analystIds();
+        if (gFiles) globalKBFiles = gFiles.filter(f => trustedOwners.has(f.user_id));
 
         const mergedFiles = [
           ...agentFiles,
@@ -950,10 +953,10 @@ Mariner Profile:
     // 7. Increment interaction usage limits counter & log transaction with email requests/responses
     if (userId) {
       try {
-        await supabase
-          .from('usage_limits')
-          .update({ interactions_count: limitCount + 1 })
-          .eq('user_id', userId);
+        // Counted in one database step; creates the limits row for officers who only use email.
+        const count = await consumeRun(userId, false);
+        limitCount = count.used - 1;
+        limitMax = count.max;
 
         // Estimate tokens
         const totalInputText = (promptQuery || '') + '\n' + (marinerProfilePrompt || '') + '\n' + (scrubbedText || '') + '\n' + (fileReferenceContext || '') + '\n' + (selectedAgentPrompt || '');

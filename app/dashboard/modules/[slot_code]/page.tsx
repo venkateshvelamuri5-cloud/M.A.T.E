@@ -1,1152 +1,602 @@
-"use client";
-import React, { useState, useEffect } from 'react';
+'use client';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { ArrowLeft, Check, ChevronDown, Copy, FileDown, FileText, Lock, Mail, PencilLine, ThumbsDown, ThumbsUp, Upload, Wand2 } from 'lucide-react';
 import { supabase } from '../../../../src/supabase-client';
-import { requestIngestion } from '../../../../src/services/documents/client';
-import { Anchor, Home, Settings, Lock, ArrowLeft, Download, Clipboard, Inbox, Upload, FileText } from 'lucide-react';
+import { useOfficer } from '../../_lib/officer';
+import { MATE_EMAIL, Module, safeFileName, storageLimitMb } from '../../_lib/modules';
+import { uploadOfficerFile, UPLOAD_ACCEPT, usedMb } from '../../_lib/files';
+import { downloadBlob, headingsOf, Markdown, markdownToDocx } from '../../_lib/markdown';
+import { AGENT_SLOTS_TEMPLATE } from '../../../analyst/_lib/slots';
+import { Button, Card, Chip, Field, Meter, SlotCode, Toggle, fileStatusChip, formatMb, inputClass } from '../../_lib/ui';
 
-interface UploadedFile {
-  id: string;
-  name: string;
-  file_size_mb: number;
-  file_type: string;
-  storage_path: string;
+const CACHED_PREFIX = '[CACHED RESPONSE - Last 24 Hours]';
+
+interface Result {
+  text: string;
+  logId: string | null;
+  documentsUsed: string[];
+  emailedTo: string | null;
+  cached: boolean;
+  seconds: number;
+  label: string;
+  createdAt: string;
+  ref: string;
+  edited?: boolean;
 }
-
-interface Agent {
-  id: string;
-  name: string;
-  description: string;
-  system_prompt: string;
-  slot_code?: string | null;
-  instructions?: string | null;
-  is_locked?: boolean;
-}
-
-interface AgentSlot {
-  code: string;
-  name: string;
-  category: string;
-  deployed: boolean;
-  emailExample: string;
-  placeholder1: string;
-  placeholder2?: string;
-  systemDirective: string;
-}
-
-const AGENT_SLOTS: AgentSlot[] = [
-  // Category A: ISM Admin Works
-  {
-    code: 'A1',
-    name: 'Risk Assessment',
-    category: '(A) ISM Admin Works',
-    deployed: true,
-    emailExample: "Make RA for 'X-band Radar not working. Pls also include reporting to flag state'",
-    placeholder1: "e.g., Working aloft on the main mast to replace signal light bulb.",
-    placeholder2: "Include height safety harness requirements and wind speed limits.",
-    systemDirective: "Act as the ISM Admin Works A1 Risk Assessment agent. Create a complete risk assessment including hazards, controls, and safety precautions."
-  },
-  {
-    code: 'A2',
-    name: 'Audit Closure',
-    category: '(A) ISM Admin Works',
-    deployed: true,
-    emailExample: "Draft CAPA for PSC deficiency on lifeboat engine failing to start instantly.",
-    placeholder1: "e.g., Vetting inspector noted oil stain in steering gear flat tray.",
-    placeholder2: "Corrective and preventive action details.",
-    systemDirective: "Act as the ISM Admin Works A2 Audit Closure agent. Help close out audit findings with root cause, corrective action, and preventive action."
-  },
-  {
-    code: 'A3',
-    name: 'Drill Notes',
-    category: '(A) ISM Admin Works',
-    deployed: true,
-    emailExample: "Generate fire drill log for galley fire scenario, crew mustered in 3 mins.",
-    placeholder1: "e.g., Abandon ship drill using lifeboat #2, davits checked.",
-    placeholder2: "Simulated events and muster times.",
-    systemDirective: "Act as the ISM Admin Works A3 Drill Notes agent. Draft a professional emergency drill record for the official logbook."
-  },
-  {
-    code: 'A4',
-    name: 'Training Minutes',
-    category: '(A) ISM Admin Works',
-    deployed: true,
-    emailExample: "Create training minutes for cold weather precautions & deck icing.",
-    placeholder1: "e.g., Training session on Marpol Annex I oil record book entries.",
-    placeholder2: "Main points discussed and feedback.",
-    systemDirective: "Act as the ISM Admin Works A4 Training Minutes agent. Draft detailed training minutes for safety meeting logs."
-  },
-  {
-    code: 'A5',
-    name: '',
-    category: '(A) ISM Admin Works',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  },
-  {
-    code: 'A6',
-    name: '',
-    category: '(A) ISM Admin Works',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  },
-
-  // Category B: Accounting & Payroll
-  {
-    code: 'B1',
-    name: 'Payroll Calculations',
-    category: '(B) Accounting & Payroll',
-    deployed: true,
-    emailExample: "Calculate overtime wages for deck crew for 45 hours overtime at 1.5x rate.",
-    placeholder1: "e.g., Crew wages and overtime calculations for June.",
-    placeholder2: "Add details of allotments and cash-drawn advances.",
-    systemDirective: "Act as the Accounting & Payroll B1 Payroll Calculations agent. Assist with maritime wage, allotments, and overtime structures."
-  },
-  {
-    code: 'B2',
-    name: 'Vessel Accounts (Including Welfare a/c)',
-    category: '(B) Accounting & Payroll',
-    deployed: true,
-    emailExample: "Review vessel port disbursements and cash-to-master balances.",
-    placeholder1: "e.g., Port disbursement account reconciliation.",
-    placeholder2: "Add welfare account expenses for crew recreation.",
-    systemDirective: "Act as the Accounting & Payroll B2 Vessel Accounts agent. Reconcile port expenses, cash to master, and welfare account funds."
-  },
-  {
-    code: 'B3',
-    name: 'Bond Accounting',
-    category: '(B) Accounting & Payroll',
-    deployed: true,
-    emailExample: "Generate bond store inventory balance report after crew purchases.",
-    placeholder1: "e.g., Slop chest and bonded stores monthly sales reconciliation.",
-    placeholder2: "Items: cigarettes, toiletries, snacks.",
-    systemDirective: "Act as the Accounting & Payroll B3 Bond Accounting agent. Reconcile slop chest sales, bonded stores inventory, and balances."
-  },
-  {
-    code: 'B4',
-    name: 'Victualling Accounting',
-    category: '(B) Accounting & Payroll',
-    deployed: true,
-    emailExample: "Verify catering victualling rate per man-day with 22 crew members onboard.",
-    placeholder1: "e.g., Monthly victualling store report and daily provisions cost.",
-    placeholder2: "Vessel location and provisioning port.",
-    systemDirective: "Act as the Accounting & Payroll B4 Victualling Accounting agent. Calculate victualling provisions, costs per man-day, and consumption levels."
-  },
-  {
-    code: 'B5',
-    name: '',
-    category: '(B) Accounting & Payroll',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  },
-  {
-    code: 'B6',
-    name: '',
-    category: '(B) Accounting & Payroll',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  },
-
-  // Category C: Crew Related
-  {
-    code: 'C1',
-    name: 'Port Papers',
-    category: '(C) Crew Related',
-    deployed: true,
-    emailExample: "Draft crew effects list and port entry immigration requirements.",
-    placeholder1: "e.g., Crew list and ports of call declaration for upcoming port entry.",
-    placeholder2: "Special custom requirements.",
-    systemDirective: "Act as the Crew Related C1 Port Papers agent. Standardize port clearance documentation and crew lists."
-  },
-  {
-    code: 'C2',
-    name: 'Crew Certification',
-    category: '(C) Crew Related',
-    deployed: true,
-    emailExample: "Identify STCW endorsements needed for Chief Mate on oil tanker.",
-    placeholder1: "e.g., Verification of sea service and medical certificates validity.",
-    placeholder2: "Flag state endorsement list.",
-    systemDirective: "Act as the Crew Related C2 Crew Certification agent. Check STCW validation, flag state endorsements, and training compliance."
-  },
-  {
-    code: 'C3',
-    name: 'SIRE 2.0 Training',
-    category: '(C) Crew Related',
-    deployed: true,
-    emailExample: "Generate training guidelines for SIRE 2.0 vetting inspection questions.",
-    placeholder1: "e.g., SIRE 2.0 protocol on deck watch keeping and safety rounds.",
-    placeholder2: "Highlight common human factor questions.",
-    systemDirective: "Act as the Crew Related C3 SIRE 2.0 Training agent. Provide SIRE 2.0 inspection preparation, question guidelines, and safety check procedures."
-  },
-  {
-    code: 'C4',
-    name: '',
-    category: '(C) Crew Related',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  },
-  {
-    code: 'C5',
-    name: '',
-    category: '(C) Crew Related',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  },
-  {
-    code: 'C6',
-    name: '',
-    category: '(C) Crew Related',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  },
-
-  // Category D: Cargo Related
-  {
-    code: 'D1',
-    name: 'Voyage orders, simplified',
-    category: '(D) Cargo Related',
-    deployed: true,
-    emailExample: "Summarize Charterer voyage instructions for load port draft limits.",
-    placeholder1: "e.g., Bunker plan and speed/consumption instructions for crossing.",
-    placeholder2: "Vessel routing advice.",
-    systemDirective: "Act as the Cargo Related D1 Voyage orders agent. Simplify complex charterer instructions into actionable bridge voyage cards."
-  },
-  {
-    code: 'D2',
-    name: 'Cargo calculations',
-    category: '(D) Cargo Related',
-    deployed: true,
-    emailExample: "Estimate cargo loading limit based on load line zones and water density.",
-    placeholder1: "e.g., Ullage report, trim correction, and density adjustments.",
-    placeholder2: "Temperatures and cargo grades.",
-    systemDirective: "Act as the Cargo Related D2 Cargo calculations agent. Provide draft survey calculations, cargo ullage adjustments, and trim correction help."
-  },
-  {
-    code: 'D3',
-    name: '',
-    category: '(D) Cargo Related',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  },
-  {
-    code: 'D4',
-    name: '',
-    category: '(D) Cargo Related',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  },
-  {
-    code: 'D5',
-    name: '',
-    category: '(D) Cargo Related',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  },
-  {
-    code: 'D6',
-    name: '',
-    category: '(D) Cargo Related',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  },
-
-  // Category E: Inventories
-  {
-    code: 'E1',
-    name: "Ship's Library",
-    category: '(E) Inventories',
-    deployed: true,
-    emailExample: "Verify inventory of mandatory IMO/SOLAS publications on the bridge.",
-    placeholder1: "e.g., Navigation charts correction log and digital publications list.",
-    placeholder2: "Next flag state audit check.",
-    systemDirective: "Act as the Inventories E1 Ship's Library agent. Assist in tracking navigation library inventory and regulatory requirements."
-  },
-  {
-    code: 'E2',
-    name: "Ship's Certificates",
-    category: '(E) Inventories',
-    deployed: true,
-    emailExample: "Flag soon-to-expire safety radio certificate due next month.",
-    placeholder1: "e.g., Vessel survey status registry and certificate validity.",
-    placeholder2: "Class society names.",
-    systemDirective: "Act as the Inventories E2 Ship's Certificates agent. Review statutory certificates registry and alert on surveys."
-  },
-  {
-    code: 'E3',
-    name: 'Medicine Chest',
-    category: '(E) Inventories',
-    deployed: true,
-    emailExample: "Perform inventory reconciliation of Category A medicine chest.",
-    placeholder1: "e.g., Expired drugs list and emergency medical kit supplies.",
-    placeholder2: "WHO guidelines reconciliation.",
-    systemDirective: "Act as the Inventories E3 Medicine Chest agent. Reconcile medical stores, first-aid kits, and flag expiry dates."
-  },
-  {
-    code: 'E4',
-    name: '',
-    category: '(E) Inventories',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  },
-  {
-    code: 'E5',
-    name: '',
-    category: '(E) Inventories',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  },
-  {
-    code: 'E6',
-    name: '',
-    category: '(E) Inventories',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  },
-
-  // Category F: Misc, Additional
-  {
-    code: 'F1',
-    name: 'SMS Clarification (Using AI)',
-    category: '(F) Misc, Additional',
-    deployed: true,
-    emailExample: "Check SMS guidelines for bunkering operations overside safety.",
-    placeholder1: "e.g., Hot work safety checklist and permit to work regulations.",
-    placeholder2: "Company policy document name.",
-    systemDirective: "Act as the Misc F1 SMS Clarification agent. Guide the user through company Safety Management System (SMS) instructions."
-  },
-  {
-    code: 'F2',
-    name: 'Weather Reports',
-    category: '(F) Misc, Additional',
-    deployed: true,
-    emailExample: "Analyze tropical cyclone advisory for routing around Cape of Good Hope.",
-    placeholder1: "e.g., Wind and swell routing prediction for North Atlantic crossing.",
-    placeholder2: "Swell direction and wave heights.",
-    systemDirective: "Act as the Misc F2 Weather Reports agent. Assess route options based on maritime weather routing data."
-  },
-  {
-    code: 'F3',
-    name: '',
-    category: '(F) Misc, Additional',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  },
-  {
-    code: 'F4',
-    name: 'General Maritime AI Query',
-    category: '(F) Misc, Additional',
-    deployed: true,
-    emailExample: "Answer general query on sea service calculation rules.",
-    placeholder1: "e.g., General maritime question.",
-    placeholder2: "Standard guidelines context.",
-    systemDirective: "Act as the General Maritime AI Agent. Provide clear safety and operational guidelines."
-  },
-  {
-    code: 'F5',
-    name: '',
-    category: '(F) Misc, Additional',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  },
-  {
-    code: 'F6',
-    name: '',
-    category: '(F) Misc, Additional',
-    deployed: false,
-    emailExample: '',
-    placeholder1: '',
-    systemDirective: ''
-  }
-];
 
 export default function ModulePage({ params }: { params: { slot_code: string } }) {
+  const code = decodeURIComponent(params.slot_code).toUpperCase();
+  const { modules } = useOfficer();
+  const mod = modules.find(m => m.code === code);
+
+  if (!mod) {
+    const planned = AGENT_SLOTS_TEMPLATE.find(s => s.code === code && s.name);
+    return (
+      <Unavailable
+        title={planned ? `${code} ${planned.name} is coming soon` : `There's no module called ${code}`}
+        body={planned ? 'The M.A.T.E team is still setting this module up. It will appear on your dashboard when it is ready.' : 'The link may be old or mistyped. Pick a module from your dashboard.'}
+      />
+    );
+  }
+  if (mod.paused) {
+    return (
+      <Unavailable
+        icon
+        title={`${mod.code} ${mod.name} is paused for updates`}
+        body="The M.A.T.E team is updating this module. It will be back shortly. Your history and documents are unaffected."
+      />
+    );
+  }
+  return <RunModule module={mod} />;
+}
+
+function Unavailable({ title, body, icon = false }: { title: string; body: string; icon?: boolean }) {
+  return (
+    <Card className="max-w-lg mx-auto mt-6 p-8 text-center space-y-3">
+      {icon && <Lock className="w-8 h-8 mx-auto text-amber-500" />}
+      <h1 className="text-lg font-bold">{title}</h1>
+      <p className="text-sm text-muted-foreground">{body}</p>
+      <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#575ECF] hover:underline pt-2"><ArrowLeft className="w-4 h-4" /> Back to all modules</Link>
+    </Card>
+  );
+}
+
+function RunModule({ module: m }: { module: Module }) {
   const router = useRouter();
-  const slotCode = params.slot_code;
+  const { files, setFiles, userId, plan, profile, email, runsUsed, runsMax, setRuns, refresh, toast, startUpgrade, openProfile } = useOfficer();
+  const [requirement, setRequirement] = useState('');
+  const [mustInclude, setMustInclude] = useState('');
+  const [selected, setSelected] = useState<string[]>([]);
+  const [emailMe, setEmailMe] = useState(false);
+  const [wordWhenReady, setWordWhenReady] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [results, setResults] = useState<Result[]>([]);
+  const [active, setActive] = useState(0);
+  const result: Result | null = results[active] || null;
+  const [error, setError] = useState<{ message: string; limit?: boolean } | null>(null);
+  const [uploading, setUploading] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const requirementRef = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const answerRef = useRef<HTMLDivElement>(null);
+  const atLimit = runsMax > 0 && runsUsed >= runsMax;
+  const sendTo = profile.vessel_email || email;
 
-  // Session & User States
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [emailInput, setEmailInput] = useState('');
-  const [interactionsCount, setInteractionsCount] = useState(0);
-  const [maxInteractions, setMaxInteractions] = useState(10);
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [subscriptionPlan, setSubscriptionPlan] = useState('free');
-
-  // Active slot properties
-  const [activeSlot, setActiveSlot] = useState<AgentSlot | null>(null);
-  const [isLocked, setIsLocked] = useState(false);
-
-  // Form input & execution states
-  const [webRunQueryInput, setWebRunQueryInput] = useState('');
-  const [elementsToInclude, setElementsToInclude] = useState('');
-  const [webRunSelectedFiles, setWebRunSelectedFiles] = useState<string[]>([]);
-  const [isWebRunning, setIsWebRunning] = useState(false);
-  const [webRunResult, setWebRunResult] = useState<string | null>(null);
-  
-  // Progress/Error logs inside terminal
-  const [terminalLog, setTerminalLog] = useState<string | null>(null);
-
-  // Feedback states
-  const [userFeedback, setUserFeedback] = useState('');
-  const [feedbackStatusMsg, setFeedbackStatusMsg] = useState<string | null>(null);
-
-  // Email and Download Toggles
-  const [sendEmailToggle, setSendEmailToggle] = useState(false);
-
+  // "Run again" from history arrives with the earlier request filled in.
   useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          setIsLoggedIn(true);
-          setUserId(session.user.id);
-          setEmailInput(session.user.email || '');
-          fetchUserData(session.user.id, session.user.email || '');
-        } else {
-          router.push('/login');
-        }
-      } catch (err) {
-        console.warn("Auth check failed, routing to login.");
-        router.push('/login');
-      }
-    };
-    checkSession();
+    const p = new URLSearchParams(window.location.search);
+    if (p.get('q')) setRequirement(p.get('q')!);
+    if (p.get('inc')) setMustInclude(p.get('inc')!);
   }, []);
 
-  const fetchUserData = async (uid: string, email: string) => {
+  useEffect(() => {
+    if (!running) return;
+    const started = Date.now();
+    setElapsed(0);
+    const t = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [running]);
+
+  const toggleFile = (id: string) => setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+
+  const upload = async (list: FileList | null) => {
+    if (!list?.length) return;
+    let current = files;
+    for (const file of Array.from(list)) {
+      setUploading(n => n + 1);
+      try {
+        const row = await uploadOfficerFile(file, userId, plan, current);
+        current = [row, ...current];
+        setFiles(current);
+        setSelected(s => [...s, row.id]);
+        toast(`Added ${file.name} and selected it for this request.`);
+      } catch (err) {
+        toast((err as Error).message, 'error');
+      } finally {
+        setUploading(n => n - 1);
+      }
+    }
+  };
+
+  const downloadWord = async (r: Result) => {
     try {
-      // 1. Fetch Limits
-      const { data: limits } = await supabase
-        .from('usage_limits')
-        .select('*')
-        .eq('user_id', uid)
-        .maybeSingle();
-
-      if (limits) {
-        setInteractionsCount(limits.interactions_count);
-        setMaxInteractions(limits.max_interactions);
-      }
-
-      // Fetch Profile plan
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('subscription_plan, role')
-        .eq('id', uid)
-        .maybeSingle();
-
-      if (profile) {
-        if (profile.role === 'disabled') {
-          await supabase.auth.signOut();
-          router.push('/login?error=disabled');
-          return;
-        }
-        if (profile.subscription_plan) {
-          setSubscriptionPlan(profile.subscription_plan);
-        }
-      }
-
-      // 2. Fetch Uploaded Files (only user workspace files)
-      const { data: files } = await supabase
-        .from('user_files')
-        .select('*')
-        .eq('user_id', uid);
-
-      if (files) {
-        setUploadedFiles(files);
-      }
-
-      // 3. Fetch Agents configuration
-      const { data: dbAgents } = await supabase
-        .from('agents')
-        .select('*');
-
-      if (dbAgents) {
-        setAgents(dbAgents);
-        
-        // Find matching agent slot template
-        const baseSlot = AGENT_SLOTS.find(s => s.code === slotCode);
-        // Drafts are hidden from officers; paused agents show with a lock.
-        const dbAgent = dbAgents.find(a => a.slot_code === slotCode && a.status !== 'draft');
-
-        if (dbAgent && (dbAgent.is_locked || dbAgent.status === 'paused')) {
-          setIsLocked(true);
-        }
-
-        if (baseSlot) {
-          if (dbAgent) {
-            setActiveSlot({
-              ...baseSlot,
-              name: dbAgent.name,
-              systemDirective: dbAgent.system_prompt,
-              emailExample: dbAgent.instructions || baseSlot.emailExample,
-            });
-          } else {
-            setActiveSlot(baseSlot);
-          }
-        } else {
-          // Check if it's a completely custom agent
-          if (dbAgent) {
-            setActiveSlot({
-              code: slotCode,
-              name: dbAgent.name,
-              category: '(F) Misc, Additional',
-              deployed: true,
-              emailExample: dbAgent.instructions || `Send task to: ${dbAgent.name}`,
-              placeholder1: "e.g., Enter your specific request.",
-              systemDirective: dbAgent.system_prompt
-            });
-          }
-        }
-      }
+      const when = new Date(r.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+      const meta = [
+        profile.vessel_name ? `Vessel: MV ${profile.vessel_name}${profile.vessel_type ? ` (${profile.vessel_type})` : ''}` : '',
+        `Prepared by: ${[profile.rank, profile.full_name].filter(Boolean).join(' ') || email}${profile.company_name ? `, ${profile.company_name}` : ''}`,
+        `Date: ${when} · Ref ${r.ref}`,
+        r.documentsUsed.length ? `Based on: ${r.documentsUsed.join(', ')}` : ''
+      ].filter(Boolean);
+      downloadBlob(await markdownToDocx(m.name, r.text, meta), `${m.code}_${safeFileName(m.name)}_${r.ref.slice(-13)}.docx`);
     } catch (err) {
-      console.error(err);
+      toast(`Couldn't make the Word file: ${(err as Error).message}`, 'error');
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!userId || !e.target.files || !e.target.files[0]) return;
-
-    const file = e.target.files[0];
-    const fileSizeMB = parseFloat((file.size / (1024 * 1024)).toFixed(2));
-    
-    const allowedExtensions = ['.pdf', '.docx', '.doc', '.txt', '.md', '.rtf', '.xlsx', '.xls', '.csv'];
-    const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-    
-    if (!allowedExtensions.includes(fileExtension)) {
-      setTerminalLog(`>>> FILE UPLOAD ERROR <<<\nUpload failed. Only PDF, DOCX, DOC, TXT, MD, RTF, and EXCEL files are allowed.`);
+  const submit = async (e?: React.FormEvent | null, refine?: { label: string; instruction: string }) => {
+    e?.preventDefault();
+    if (running) return;
+    if (!requirement.trim()) {
+      toast('Describe what you need first.', 'error');
+      requirementRef.current?.focus();
       return;
     }
-
-    const totalSpaceUsedMB = parseFloat(
-      uploadedFiles.reduce((acc, f) => acc + Number(f.file_size_mb), 0).toFixed(2)
-    );
-
-    const limitMB = subscriptionPlan === 'premium' ? 5000 : 25;
-    if (totalSpaceUsedMB + fileSizeMB > limitMB) {
-      setTerminalLog(`>>> FILE UPLOAD ERROR <<<\nUpload failed. This file exceeds your workspace capacity limit of ${limitMB}MB.`);
-      return;
-    }
-
-    setTerminalLog(`[UPLOAD] Uploading "${file.name}" to storage bucket...`);
-
+    setRunning(true);
+    setError(null);
+    if (!refine) { setResults([]); setActive(0); }
+    const started = Date.now();
+    const asked = refine ? `${requirement.trim()}\n\n${refine.instruction}` : requirement.trim();
     try {
-      const storagePath = `${userId}/${Date.now()}_${file.name}`;
-      const { error: uploadErr } = await supabase.storage
-        .from('user-spaces')
-        .upload(storagePath, file);
-
-      if (uploadErr) throw uploadErr;
-
-      const { data: newFile, error: dbErr } = await supabase
-        .from('user_files')
-        .insert({
-          user_id: userId,
-          name: file.name,
-          storage_path: storagePath,
-          file_type: fileExtension.substring(1),
-          file_size_mb: fileSizeMB
-        })
-        .select()
-        .single();
-
-      if (dbErr) throw dbErr;
-      if (newFile?.id) requestIngestion(newFile.id);
-
-      await supabase.from('interactions_log').insert({
-        user_id: userId,
-        subject: `Uploaded document: ${file.name}`,
-        status: 'Completed'
-      });
-
-      setTerminalLog(`[UPLOAD SUCCESS] Successfully uploaded "${file.name}".`);
-      fetchUserData(userId, emailInput);
-      
-      // Auto select the file
-      if (newFile) {
-        setWebRunSelectedFiles(prev => [...prev, newFile.id]);
-      }
-
-    } catch (err) {
-      console.error(err);
-      setTerminalLog(`>>> FILE UPLOAD ERROR <<<\nUpload failed: ${(err as Error).message}`);
-    }
-  };
-
-  const handleToggleFileSelection = (fileId: string) => {
-    setWebRunSelectedFiles(prev => 
-      prev.includes(fileId) 
-        ? prev.filter(id => id !== fileId)
-        : [...prev, fileId]
-    );
-  };
-
-  const handleWebRunSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!userId || !activeSlot || !webRunQueryInput) {
-      setTerminalLog(">>> RUNTIME WARNING <<<\nPlease enter a task description.");
-      return;
-    }
-
-    setIsWebRunning(true);
-    setTerminalLog("[1/3] Initializing runtime. Reading ship profile...");
-    setWebRunResult(null);
-
-    // Get database agent ID
-    const dbAgent = agents.find(a => a.slot_code === slotCode);
-    const dbAgentId = dbAgent?.id;
-
-    if (!dbAgentId) {
-      setIsWebRunning(false);
-      setTerminalLog(">>> RUNTIME ERROR <<<\nAgent profile not found in database. Please verify analyst deployment.");
-      return;
-    }
-
-    // Step 2 updates
-    setTimeout(() => {
-      setTerminalLog(prev => prev + "\n[2/3] Extracting reference documents & syncing database credentials...");
-    }, 800);
-
-    setTimeout(() => {
-      setTerminalLog(prev => prev + "\n[3/3] Sending payload to AI Engine. Generating grounded maritime safety response...");
-    }, 1800);
-
-    const queryToSend = `[Agent Category: ${activeSlot.category}]\n[Role: ${activeSlot.code} - ${activeSlot.name}]\n[Instructions: ${activeSlot.systemDirective}]\n\nRequirement:\n${webRunQueryInput}` +
-      (elementsToInclude ? `\n\nAdditional elements to include:\n${elementsToInclude}` : '');
-
-    try {
-      const response = await fetch('/api/agent/run', {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { router.push('/login'); return; }
+      const res = await fetch('/api/agent/run', {
         method: 'POST',
         cache: 'no-store',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId,
-          agentId: dbAgentId,
-          queryInput: queryToSend,
-          selectedFileIds: webRunSelectedFiles,
-          sendEmail: sendEmailToggle
-        }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ agentId: m.agentId, requirement: asked, mustInclude: mustInclude.trim(), selectedFileIds: selected, sendEmail: emailMe })
       });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) { toast('Your session has expired. Sign in again.', 'error'); router.push('/login'); return; }
+      if (!res.ok) { setError({ message: data.error || 'The module couldn\'t finish. Please try again.', limit: !!data.limitReached }); return; }
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Server error running agent');
-      }
-
-      // Success
-      setTimeout(() => {
-        setWebRunResult(data.result);
-        setTerminalLog(null);
-        fetchUserData(userId, emailInput);
-
-        // Auto download if toggle is enabled
-        if (sendEmailToggle) {
-          const blob = new Blob([data.result], { type: 'text/plain;charset=utf-8' });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.setAttribute('download', `${activeSlot.code}_${activeSlot.name.replace(/\s+/g, '_')}_response.txt`);
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-        }
-      }, 2500);
-
-    } catch (err) {
-      console.error(err);
-      setTimeout(() => {
-        setIsWebRunning(false);
-        setTerminalLog(`>>> RUNTIME ERROR <<<\nExecution failed: ${(err as Error).message}`);
-      }, 2500);
+      const raw: string = data.result || '';
+      const cached = raw.startsWith(CACHED_PREFIX);
+      const text = cached ? raw.slice(CACHED_PREFIX.length).trimStart() : raw;
+      const now = new Date();
+      const stamp = now.toISOString().slice(0, 16).replace(/[-:T]/g, '').replace(/^(\d{8})/, '$1-');
+      const next: Result = {
+        text, logId: data.logId || null, documentsUsed: data.documentsUsed || [], emailedTo: data.emailedTo || null, cached,
+        seconds: Math.round((Date.now() - started) / 1000), label: refine?.label || 'Original', createdAt: now.toISOString(), ref: `MATE-${m.code}-${stamp}`
+      };
+      setResults(rs => { const all = refine ? [...rs, next] : [next]; setActive(all.length - 1); return all; });
+      if (typeof data.runsUsed === 'number') setRuns(data.runsUsed, data.runsMax);
+      if (wordWhenReady && !refine) downloadWord(next);
+      if (window.innerWidth < 1024) setTimeout(() => answerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+      refresh();
+    } catch {
+      setError({ message: 'Couldn\'t reach M.A.T.E. Check your connection and try again.' });
     } finally {
-      setTimeout(() => {
-        setIsWebRunning(false);
-      }, 2500);
+      setRunning(false);
     }
   };
 
-  const handleFeedbackSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!userFeedback || !userId || !activeSlot) return;
-    setFeedbackStatusMsg("Sending feedback...");
-    try {
-      const { error } = await supabase.from('interactions_log').insert({
-        user_id: userId,
-        subject: `Feedback on ${activeSlot.code} - ${activeSlot.name}`,
-        status: 'Completed',
-        error_message: `User Feedback: ${userFeedback}`
-      });
-      if (error) throw error;
-
-      // Fire feedback email notification — non-blocking
-      fetch('/api/feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          feedback: userFeedback,
-          agentCode: activeSlot.code,
-          agentName: activeSlot.name
-        })
-      }).catch(err => console.warn('Feedback email failed (non-critical):', err));
-
-      setFeedbackStatusMsg("Thank you for your feedback!");
-      setUserFeedback('');
-      setTimeout(() => setFeedbackStatusMsg(null), 3000);
-    } catch (err) {
-      console.error(err);
-      setFeedbackStatusMsg("Failed to submit feedback.");
-    }
-  };
-
-  const handleCopyResult = () => {
-    if (webRunResult) {
-      navigator.clipboard.writeText(webRunResult);
-      alert("Copied response to clipboard!");
-    }
-  };
-
-  const handleDownloadResult = () => {
-    if (webRunResult && activeSlot) {
-      const blob = new Blob([webRunResult], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `${activeSlot.code}_${activeSlot.name.replace(/\s+/g, '_')}_response.txt`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    }
-  };
-
-  const handleDownloadResultRtf = () => {
-    if (webRunResult && activeSlot) {
-      // Convert plain text newlines to RTF control words
-      const escapedText = webRunResult
-        .replace(/\\/g, '\\\\')
-        .replace(/{/g, '\\{')
-        .replace(/}/g, '\\}')
-        .replace(/\n/g, '\\par\n');
-      
-      const rtfContent = `{\\rtf1\\ansi\\deff0\n{\\fonttbl{\\f0\\fnil\\fcharset0 Arial;}}\n\\viewkind4\\uc1\\pard\\lang1033\\f0\\fs24\n{\\b M.A.T.E. - Agent ${activeSlot.code} - ${activeSlot.name} Response}\n\\par\\par\n${escapedText}\n}`;
-      
-      const blob = new Blob([rtfContent], { type: 'application/rtf;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `${activeSlot.code}_${activeSlot.name.replace(/\s+/g, '_')}_response.rtf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    }
-  };
-
-  const handleDownloadInstructions = async () => {
-    if (activeSlot) {
-      let manualText = '';
-      try {
-        const { data } = await supabase
-          .from('system_settings')
-          .select('value')
-          .eq('key', 'user_manual')
-          .maybeSingle();
-        if (data?.value) {
-          manualText = data.value;
-        }
-      } catch (err) {
-        console.warn('Failed to fetch user manual for download:', err);
-      }
-
-      const content = `AGENT: ${activeSlot.code} - ${activeSlot.name}
-CATEGORY: ${activeSlot.category}
-
-(A1) RISK ASSESSMENT
-
-The email sent out can be formatted or plain text. Plain text option is preferred to minimize the outbound email data packet size.
-
-----------------------------------------------------
-HOW TO :-
-TO : mate@logmark-ai.com
-SUBJECT : Enter the name of the module you want to query. Please ensure that you use one of the following: "RA", "RISK ASSESSMENT", "SAFETY ASSESSMENT", or "RISK ANALYSIS". Please note that the MATE ‘may not’ reliably process or recognize keywords outside of this list.
-BODY : Insert a one liner query to the risk assessment module.
-
-In a separate paragraph, spaced by a line, put in list of items you want the AI to mandatorily include in your risk assessment output.
-
-ATTACHMENT : Any PDF relevant to the RA being generated can be added as an attachment; example – mail from office requiring points to be included in RA, extract of company manual or any other document that as relevant information that you want included in the risk assessment generated.
-
-Note that; additional text after the RA request and attachment addition are optional.
-
-!! Greater the detail mentioned in the requirement, the better will the output”
-For example :- A query “Make RA for ‘midship crane not operating prior coming to port’” will give a poor result compared to ‘Midship crane non-operational as required by terminal requirement prior vessel coming into terminal for loading operation’
-----------------------------------------------------
-
-----------------------------------------------------
-EXAMPLE :-
-TO : mate@logmark-ai.com
-
-SUBJECT : Risk Assessment
-
-BODY : 
-Make a RA for X-band RADAR not working.
-
-Inform flag and class, obtain dispensation
-
-ATTACHMENT : eMail.pdf “(mail from office requesting RA to be made and points to be included)” 
-----------------------------------------------------
-
-## Note :- Pls read the workflow at the bottom of this document on how MATE generated the required response.
-
-====================================================
-M.A.T.E. USER MANUAL & GUIDELINES
-====================================================
-
-${manualText || 'No additional user manual content found in settings.'}`
-      
-      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `${activeSlot.code}_Instructions_Template.txt`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    }
-  };
-
-  if (!isLoggedIn) {
-    return (
-      <div className="min-h-screen bg-background text-foreground flex flex-col justify-center items-center font-sans p-6">
-        <div className="flex flex-col items-center">
-          <img src="/logo.jpeg" alt="M.A.T.E logo" width="64" height="64" className="rounded-xl border border-border/80 shadow-sm animate-pulse mb-4" />
-          <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">Verifying Session...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (isLocked) {
-    return (
-      <div className="min-h-screen bg-background text-foreground flex flex-col justify-center items-center font-sans p-6">
-        <div className="w-full max-w-md bg-card border border-border p-8 rounded-xl shadow-md text-center">
-          <Lock className="w-12 h-12 text-red-500 mx-auto mb-4 animate-bounce" />
-          <h2 className="text-lg font-black text-deep mb-2">Agent Slot Locked</h2>
-          <p className="text-muted-foreground text-xs leading-relaxed mb-6 font-medium">
-            This module has been temporarily locked by the administrator for safety-updates or directive configuration. Please check back shortly.
-          </p>
-          <button 
-            onClick={() => router.push('/dashboard')}
-            className="px-6 py-2.5 bg-primary text-white font-bold text-xs uppercase tracking-wider rounded-lg transition"
-          >
-            Return to Dashboard
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!activeSlot) {
-    return (
-      <div className="min-h-screen bg-background text-foreground flex flex-col justify-center items-center font-sans p-6">
-        <div className="w-full max-w-md bg-card border border-border p-8 rounded-xl shadow-md text-center">
-          <h2 className="text-lg font-black text-deep mb-2">Loading Agent Profile...</h2>
-          <p className="text-muted-foreground text-xs leading-relaxed mb-6 font-medium">
-            Checking status coordinates for {slotCode}...
-          </p>
-          <button 
-            onClick={() => router.push('/dashboard')}
-            className="px-6 py-2.5 bg-primary text-white font-bold text-xs uppercase tracking-wider rounded-lg transition"
-          >
-            Go Back
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const limit = storageLimitMb(plan);
+  const used = usedMb(files);
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans p-6 md:p-12 selection:bg-gold selection:text-deep relative">
-      {/* Top Navbar */}
-      <div className="flex justify-between items-center mb-8 max-w-6xl mx-auto border-b border-border/60 pb-6">
-        <div className="flex items-center gap-6">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <img src="/logo.jpeg" alt="M.A.T.E logo" width="36" height="36" className="rounded" />
-            <span className="text-base font-black tracking-tight text-deep uppercase font-display">M.A.T.E</span>
-          </Link>
-          <div className="bg-amber-100 text-[#FE7B02] text-xs font-bold px-3 py-1 rounded border border-[#FE7B02]/30">
-            Token Usage : <span className="underline font-black">{interactionsCount} / {maxInteractions}</span>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-4">
-          <span className="text-base font-black tracking-tight text-deep uppercase font-display">
-            {activeSlot.code} - {activeSlot.name}
-          </span>
-          <button 
-            onClick={() => router.push('/dashboard')}
-            className="p-2 text-foreground hover:bg-secondary border border-border rounded-lg transition"
-            title="Return to Dashboard"
-          >
-            <Home className="w-5 h-5 text-[#575ECF]" />
-          </button>
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+        <div className="space-y-1 min-w-0">
+          <Link href="/dashboard" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="w-4 h-4" /> All modules</Link>
+          <h1 className="font-display text-2xl font-semibold tracking-tight flex items-center gap-2.5"><SlotCode code={m.code} /> <span className="min-w-0">{m.name}</span></h1>
+          {m.description && <p className="text-sm text-muted-foreground max-w-2xl">{m.description}</p>}
         </div>
       </div>
 
-      {/* Main Interactive Grid */}
-      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
-        
-        {/* Left panel */}
-        <div className="space-y-6">
-          <form onSubmit={handleWebRunSubmit} className="bg-white border-2 border-[#1b1b1b] p-6 rounded-xl shadow-[4px_4px_0px_0px_#1b1b1b] space-y-5">
-            {/* Step 1 */}
-            <div>
-              <label className="block text-sm font-bold text-[#1b1b1b] mb-2">
-                Step &#8211; 1 : Input the requirement
-              </label>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] items-start">
+        <form onSubmit={submit} className="space-y-5 min-w-0">
+          <Card className="p-5 space-y-5">
+            <Field label="What do you need?" htmlFor="run-requirement" hint="The more detail, the better the answer: the situation, the equipment, the port or terminal, and who asked for it.">
               <textarea
-                required
-                rows={3}
-                value={webRunQueryInput}
-                onChange={e => setWebRunQueryInput(e.target.value)}
-                placeholder="e.g. detailed safety tasks description..."
-                className="w-full px-3 py-2.5 border border-[#1b1b1b] bg-[#FCFBF8] rounded-lg text-xs outline-none text-[#1b1b1b] transition font-medium focus:ring-1 focus:ring-[#575ECF]"
+                ref={requirementRef}
+                id="run-requirement"
+                rows={5}
+                value={requirement}
+                onChange={e => setRequirement(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit(); }}
+                placeholder={m.examples[0] ? `e.g. ${m.examples[0]}` : 'Describe the task or question'}
+                className={`${inputClass} leading-relaxed`}
               />
-            </div>
-
-            {/* Step 2 */}
-            <div>
-              <label className="block text-sm font-bold text-[#1b1b1b] mb-2">
-                Step -2 : Include elements you want AI to include in the response
-              </label>
-              <textarea
-                rows={2}
-                value={elementsToInclude}
-                onChange={e => setElementsToInclude(e.target.value)}
-                placeholder="e.g. hazard identification points, reporting format (optional)..."
-                className="w-full px-3 py-2.5 border border-[#1b1b1b] bg-[#FCFBF8] rounded-lg text-xs outline-none text-[#1b1b1b] transition font-medium focus:ring-1 focus:ring-[#575ECF]"
-              />
-              <p className="mt-1.5 text-[11px] text-red-500 italic font-medium">
-                Optional; add a brief summary of specific points that you need AI to mention in the final output.
-              </p>
-            </div>
-
-            {/* Step 3 - Insert additional reference material */}
-            <div>
-              <label className="block text-sm font-bold text-[#1b1b1b] mb-3">
-                Step -3 : Insert any additional reference material
-              </label>
-
-              {/* Existing files selector (compact) */}
-              {uploadedFiles.length > 0 && (
-                <div className="mb-3">
-                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Select from your workspace / Global KB</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-3 bg-[#FCFBF8] border border-[#dcdad5] rounded-lg max-h-24 overflow-y-auto">
-                    {uploadedFiles.map(file => (
-                      <label key={file.id} className="flex items-center justify-between text-xs text-zinc-700 cursor-pointer select-none font-semibold p-1 hover:bg-zinc-50 rounded">
-                        <div className="flex items-center gap-2 truncate pr-2">
-                          <input
-                            type="checkbox"
-                            checked={webRunSelectedFiles.includes(file.id)}
-                            onChange={() => handleToggleFileSelection(file.id)}
-                            className="rounded border-border text-gold focus:ring-gold"
-                          />
-                          <span className="truncate">{file.name}</span>
-                        </div>
-                        <span className={`text-[7px] uppercase tracking-wider font-extrabold px-1 rounded shrink-0 ${
-                          file.file_type === 'knowledge_base' ? 'bg-indigo-100 text-[#575ECF]' : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {file.file_type === 'knowledge_base' ? 'Global KB' : 'Workspace'}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Upload new document - dashed box */}
-              <div className="border border-[#dcdad5] rounded-lg p-3">
-                <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Upload New Reference Document</p>
-                <label className="flex flex-col items-center justify-center gap-1.5 border-2 border-dashed border-zinc-300 hover:border-[#575ECF] bg-[#FCFBF8] hover:bg-indigo-50/30 rounded-lg py-4 cursor-pointer transition group">
-                  <span className="text-xs font-bold text-zinc-500 group-hover:text-[#575ECF] transition flex items-center gap-1.5">
-                    <span className="text-base leading-none">+</span> Click to upload PDF, TXT, DOCX, MD, EXCEL
-                  </span>
-                  <input
-                    type="file"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    accept=".pdf,.docx,.doc,.txt,.md,.rtf,.xlsx,.xls,.csv"
-                  />
-                </label>
-                <p className="mt-2 text-[11px] text-red-500 italic font-medium">
-                  Optional. This will impact the to total available storage space for the user.
-                </p>
+            </Field>
+            {m.examples.length > 0 && !requirement && (
+              <div className="flex flex-wrap gap-2 -mt-2">
+                {m.examples.map(ex => (
+                  <button key={ex} type="button" onClick={() => { setRequirement(ex); requirementRef.current?.focus(); }}
+                    className="text-xs px-2.5 py-1 rounded-full border border-dashed border-border text-muted-foreground hover:border-[#575ECF] hover:text-[#575ECF] text-left max-w-full truncate" title={ex}>
+                    Try: {ex}
+                  </button>
+                ))}
               </div>
-            </div>
+            )}
+            <Field label="Must include (optional)" htmlFor="run-include" hint="Points the answer has to cover, one per line.">
+              <textarea id="run-include" rows={2} value={mustInclude} onChange={e => setMustInclude(e.target.value)} placeholder={`e.g. ${m.mustIncludeHint}`} className={inputClass} />
+            </Field>
+          </Card>
 
-            {/* Step 4 */}
-            <div className="space-y-3.5">
-              <label className="block text-sm font-bold text-[#1b1b1b]">
-                Step &#8211; 4 : Action Toggles &amp; Execution
-              </label>
-              
-              <div className="flex items-center gap-2.5 p-3 bg-zinc-50 border border-zinc-200 rounded-lg">
-                <input 
-                  type="checkbox"
-                  id="sendEmailCheck"
-                  checked={sendEmailToggle}
-                  onChange={e => setSendEmailToggle(e.target.checked)}
-                  className="w-4 h-4 text-[#575ECF] rounded border-[#dcdad5] cursor-pointer"
-                />
-                <label htmlFor="sendEmailCheck" className="text-xs font-bold text-zinc-750 cursor-pointer select-none">
-                  Send response via Email and Auto-download as Text (.txt)
-                </label>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isWebRunning}
-                className="w-full py-2.5 bg-[#1b1b1b] hover:bg-zinc-800 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition disabled:opacity-50 letter-spacing-widest"
-              >
-                {isWebRunning ? "Processing..." : "Submit"}
-              </button>
+          <Card className="p-5 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">Documents</h2>
+              <span className="text-xs text-muted-foreground">{selected.length ? `${selected.length} selected` : 'Optional'}</span>
             </div>
-          </form>
-
-          {/* Instructions Box */}
-          <div className="bg-[#FAF9F6] border border-[#dcdad5] p-6 rounded-xl space-y-3.5 flex flex-col justify-between">
-            <div>
-              <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">// Instructions :-</h4>
-              <p className="text-red-600 italic text-xs leading-relaxed mt-2">
-                For sending query via email; "{activeSlot.emailExample}"
-              </p>
-              <p className="text-zinc-600 text-[11px] leading-relaxed font-semibold mt-2">
-                Pls ensure user specific information is filled out so that the responses generated are specific to your ship type.
-              </p>
-            </div>
-            <button
-              onClick={handleDownloadInstructions}
-              type="button"
-              className="mt-3 py-2 px-4 border border-[#dcdad5] hover:bg-zinc-100 rounded-lg text-xs font-bold text-zinc-700 transition flex items-center justify-center gap-1.5 w-fit"
+            {files.length > 0 && (
+              <ul className="max-h-48 overflow-y-auto -mx-1 space-y-0.5">
+                {files.map(f => (
+                  <li key={f.id}>
+                    <label className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-muted/50 cursor-pointer text-sm">
+                      <input type="checkbox" checked={selected.includes(f.id)} onChange={() => toggleFile(f.id)} className="w-4 h-4 accent-[#575ECF] shrink-0" />
+                      <span className="truncate flex-1" title={f.name}>{f.name}</span>
+                      {fileStatusChip(f)}
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div
+              onDragOver={e => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={e => { e.preventDefault(); setDragging(false); upload(e.dataTransfer.files); }}
+              onClick={() => fileInput.current?.click()}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.current?.click(); } }}
+              role="button"
+              tabIndex={0}
+              className={`rounded-lg border-2 border-dashed px-3 py-3 flex items-center justify-center gap-2 text-sm cursor-pointer transition ${dragging ? 'border-[#575ECF] bg-indigo-50/60' : 'border-border text-muted-foreground hover:border-[#575ECF]/60'}`}
             >
-              <Download className="w-3.5 h-3.5 text-[#575ECF]" /> Download Instructions & Template
-            </button>
-          </div>
-
-          {/* Feedback Box */}
-          <form onSubmit={handleFeedbackSubmit} className="bg-[#FAF9F6] border border-[#dcdad5] p-6 rounded-xl space-y-4">
-            <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">// Any feedback provided would be greatly appreciated :-</h4>
-            <textarea
-              required
-              rows={2}
-              value={userFeedback}
-              onChange={e => setUserFeedback(e.target.value)}
-              placeholder="~ user feedback ~"
-              className="w-full px-3 py-2 border border-[#dcdad5] bg-white rounded-lg text-xs outline-none text-[#1b1b1b] transition font-medium focus:border-[#575ECF]"
-            />
-            <div className="flex items-center justify-between">
-              <button
-                type="submit"
-                className="px-6 py-2 bg-[#1b1b1b] hover:bg-[#2b2b2b] text-white rounded-lg text-xs font-bold uppercase tracking-wider transition"
-              >
-                Submit
-              </button>
-              {feedbackStatusMsg && (
-                <span className="text-xs font-bold text-emerald-600 animate-pulse">{feedbackStatusMsg}</span>
-              )}
+              <Upload className="w-4 h-4" /> {uploading ? 'Uploading…' : 'Drop a file or click to add one'}
+              <input ref={fileInput} type="file" multiple accept={UPLOAD_ACCEPT} className="hidden" onChange={e => { upload(e.target.files); e.target.value = ''; }} />
             </div>
-          </form>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <Meter used={used} max={limit} className="w-24" />
+              <span className="tabular-nums">{formatMb(used)} of {limit >= 1000 ? `${limit / 1000} GB` : `${limit} MB`}</span>
+            </div>
+            <p className="text-xs text-muted-foreground">Company documents and this module&apos;s own documents are always included.</p>
+          </Card>
+
+          <Card className="p-5 space-y-3">
+            <Toggle id="run-email" checked={emailMe} onChange={setEmailMe}>
+              Email the answer to <b className="font-semibold">{sendTo}</b>
+            </Toggle>
+            <Toggle id="run-word" checked={wordWhenReady} onChange={setWordWhenReady}>Download as Word when it&apos;s ready</Toggle>
+          </Card>
+
+          {atLimit ? (
+            <Card className="p-4 border-red-200 bg-red-50/60 text-sm space-y-2">
+              <div className="font-semibold">You&apos;ve used all {runsMax} runs.</div>
+              {plan !== 'premium' ? <Button variant="primary" onClick={startUpgrade}>Upgrade to keep going</Button> : <p className="text-muted-foreground">Contact the M.A.T.E team to raise your limit.</p>}
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              <Button type="submit" variant="primary" disabled={running} className="w-full py-3 text-[15px]">
+                {running ? `Working… ${elapsed} s` : `Generate ${m.name.toLowerCase().startsWith('general') ? 'answer' : m.name}`}
+              </Button>
+              <p className="text-xs text-center text-muted-foreground">Uses 1 of your {runsMax - runsUsed} remaining runs · Ctrl + Enter</p>
+            </div>
+          )}
+
+          <EmailHowTo module={m} />
+        </form>
+
+        <div ref={answerRef} className="lg:sticky lg:top-20 min-w-0">
+          <Card className="min-h-[420px] flex flex-col">
+            {running && !result ? (
+              <Waiting seconds={elapsed} documents={selected.length} />
+            ) : error ? (
+              <div className="p-6 space-y-3">
+                <h2 className="font-semibold text-red-700">{error.limit ? 'Run limit reached' : 'That didn\'t work'}</h2>
+                <p className="text-sm text-muted-foreground">{error.message}</p>
+                {error.limit && plan !== 'premium' && <Button variant="primary" onClick={startUpgrade}>Upgrade</Button>}
+              </div>
+            ) : result ? (
+              <Answer
+                module={m}
+                results={results}
+                active={active}
+                onSelect={setActive}
+                onChange={t => setResults(rs => rs.map((r, i) => i === active ? { ...r, text: t, edited: true } : r))}
+                onRefine={r => submit(null, r)}
+                refining={running}
+                onWord={() => downloadWord(result)}
+                onEditRequest={() => requirementRef.current?.focus()}
+              />
+            ) : (
+              <EmptyAnswer module={m} onProfile={openProfile} profileShort={!profile.vessel_type || !profile.vessel_name} />
+            )}
+          </Card>
         </div>
-
-        {/* Right panel (Terminal View) */}
-        <div className="flex flex-col h-full">
-          <div className="flex-1 bg-[#1b1b1b] border-2 border-[#1b1b1b] rounded-2xl shadow-[4px_4px_0px_0px_#1b1b1b] flex flex-col overflow-hidden min-h-[450px]">
-            <div className="bg-[#2b2b2b] px-6 py-3.5 flex justify-between items-center border-b border-zinc-800">
-              <span className="text-zinc-400 font-mono text-xs font-bold">// Response Terminal</span>
-              {webRunResult && (
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handleDownloadResult}
-                    className="p-1.5 text-zinc-400 hover:text-white rounded hover:bg-zinc-800 transition flex items-center gap-1"
-                    title="Download Response TXT"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span className="text-[9px] font-mono font-bold">TXT</span>
-                  </button>
-                  <button
-                    onClick={handleDownloadResultRtf}
-                    className="p-1.5 text-zinc-400 hover:text-white rounded hover:bg-zinc-800 transition flex items-center gap-1"
-                    title="Download Response RTF"
-                  >
-                    <Download className="w-4 h-4 text-[#FE7B02]" />
-                    <span className="text-[9px] font-mono font-bold">RTF</span>
-                  </button>
-                  <button
-                    onClick={handleCopyResult}
-                    className="p-1.5 text-zinc-400 hover:text-white rounded hover:bg-zinc-800 transition"
-                    title="Copy to Clipboard"
-                  >
-                    <Clipboard className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
-            </div>
-            
-            <div className="flex-1 p-6 font-mono text-xs text-zinc-200 leading-relaxed overflow-y-auto whitespace-pre-wrap select-all">
-              {webRunResult ? (
-                webRunResult
-              ) : isWebRunning ? (
-                <div className="space-y-2 text-zinc-400 font-mono">
-                  <div className="text-zinc-500 animate-pulse font-bold">{">>> EXECUTING AGENT RUNTIME v1.0.4 <<<"}</div>
-                  <div className="whitespace-pre">{terminalLog}</div>
-                </div>
-              ) : terminalLog ? (
-                <div className="text-rose-500 font-bold font-mono whitespace-pre">
-                  {terminalLog}
-                </div>
-              ) : (
-                <div className="text-zinc-500 italic text-center mt-12">
-                  Response output will appear here after generation...
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
       </div>
     </div>
+  );
+}
+
+function Waiting({ seconds, documents }: { seconds: number; documents: number }) {
+  const stage = seconds < 4 ? 'Reading your request and vessel profile' : seconds < 12 ? (documents ? 'Searching your documents and the company manuals' : 'Searching the company manuals') : 'Writing the answer';
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
+      <div className="w-10 h-10 rounded-full border-2 border-[#575ECF]/20 border-t-[#575ECF] animate-spin motion-reduce:animate-none" />
+      <div>
+        <div className="font-semibold text-sm">{stage}…</div>
+        <div className="text-xs text-muted-foreground mt-1 tabular-nums">{seconds} s{seconds > 25 ? ' · long documents take a little longer' : ''}</div>
+      </div>
+    </div>
+  );
+}
+
+function EmptyAnswer({ module: m, onProfile, profileShort }: { module: Module; onProfile: () => void; profileShort: boolean }) {
+  return (
+    <div className="flex-1 p-6 sm:p-8 space-y-5">
+      <div className="space-y-1">
+        <h2 className="font-semibold">Your {m.name.toLowerCase()} will appear here</h2>
+        <p className="text-sm text-muted-foreground">Formatted with headings and tables, ready to copy into your forms or download as Word.</p>
+      </div>
+      <ul className="space-y-3 text-sm">
+        <li className="flex gap-3"><Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /><span><b>Be specific.</b> <span className="text-muted-foreground">&ldquo;Midship crane inoperative; terminal needs it before berthing for loading&rdquo; beats &ldquo;crane not working&rdquo;.</span></span></li>
+        <li className="flex gap-3"><Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /><span><b>Add the office email</b> <span className="text-muted-foreground">or manual extract that asks for this, so the answer covers their points.</span></span></li>
+        <li className="flex gap-3"><Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /><span><b>Check before you use it.</b> <span className="text-muted-foreground">M.A.T.E drafts; you stay responsible for the final document.</span></span></li>
+      </ul>
+      {profileShort && (
+        <p className="text-sm rounded-lg bg-amber-50 text-amber-900 px-3 py-2">
+          Your vessel details are incomplete, so answers will be more generic. <button type="button" onClick={onProfile} className="font-semibold underline">Add them</button>
+        </p>
+      )}
+    </div>
+  );
+}
+
+const REFINES = [
+  { label: 'Shorter', instruction: 'Keep the same content but make the answer shorter and more concise.' },
+  { label: 'More detail', instruction: 'Expand the answer with more detail, specific steps and responsibilities on board.' },
+  { label: 'As a checklist', instruction: 'Present the answer as a checklist with tick boxes that can be used on board.' },
+  { label: 'More formal', instruction: 'Rewrite the answer in a formal tone suitable for sending to the office, flag or class.' },
+  { label: 'Add regulations', instruction: 'Add references to the relevant regulations (SOLAS, MARPOL, ISM Code, STCW, MLC, flag or class rules) where they apply.' }
+];
+
+/** The answer, laid out like a ship's document: letterhead, contents, versions, edit, refine and rating. */
+function Answer({ module: m, results, active, onSelect, onChange, onRefine, refining, onWord, onEditRequest }: {
+  module: Module; results: Result[]; active: number; onSelect: (i: number) => void; onChange: (text: string) => void;
+  onRefine: (r: { label: string; instruction: string }) => void; refining: boolean; onWord: () => void; onEditRequest: () => void;
+}) {
+  const { toast, profile, email } = useOfficer();
+  const result = results[active];
+  const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [ask, setAsk] = useState('');
+  const idPrefix = `ans-${active}`;
+  const contents = headingsOf(result.text, idPrefix);
+
+  useEffect(() => { setEditing(false); }, [active]);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(result.text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      toast('Copy isn\'t available here. Select the text instead.', 'error');
+    }
+  };
+  const text = () => downloadBlob(new Blob([result.text], { type: 'text/plain;charset=utf-8' }), `${m.code}_${safeFileName(m.name)}.txt`);
+  const startEdit = () => { setDraft(result.text); setEditing(true); };
+  const saveEdit = () => { onChange(draft); setEditing(false); toast('Your edits are used for Copy and downloads.'); };
+  const custom = () => { if (ask.trim()) { onRefine({ label: ask.trim().slice(0, 24), instruction: ask.trim() }); setAsk(''); } };
+
+  const when = new Date(result.createdAt);
+  const prepared = [profile.rank, profile.full_name].filter(Boolean).join(' ') || email;
+
+  return (
+    <div className="flex flex-col relative">
+      <div className="px-4 sm:px-5 py-2.5 border-b border-border flex flex-wrap items-center gap-2 bg-muted/30 rounded-t-xl">
+        {results.length > 1 ? (
+          <div className="flex gap-1 overflow-x-auto max-w-full" role="tablist" aria-label="Versions">
+            {results.map((r, i) => (
+              <button key={i} type="button" role="tab" aria-selected={i === active} onClick={() => onSelect(i)}
+                className={`text-xs px-2.5 py-1 rounded-lg whitespace-nowrap transition ${i === active ? 'bg-card shadow-sm font-semibold text-foreground ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'}`}>
+                v{i + 1} · {r.label}{r.edited ? ' (edited)' : ''}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <Chip tone="green"><Check className="w-3 h-3" /> {result.cached ? 'Same request as earlier today' : `Ready in ${result.seconds} s`}</Chip>
+        )}
+        <div className="ml-auto flex gap-1.5">
+          {editing ? (
+            <>
+              <Button size="sm" onClick={() => setEditing(false)}>Cancel</Button>
+              <Button size="sm" variant="primary" onClick={saveEdit}>Save edits</Button>
+            </>
+          ) : (
+            <>
+              <Button size="sm" onClick={startEdit} title="Edit the answer before you copy or download it"><PencilLine className="w-3.5 h-3.5" /><span className="hidden sm:inline"> Edit</span></Button>
+              <Button size="sm" onClick={copy}>{copied ? <><Check className="w-3.5 h-3.5" /><span className="hidden sm:inline"> Copied</span></> : <><Copy className="w-3.5 h-3.5" /><span className="hidden sm:inline"> Copy</span></>}</Button>
+              <Button size="sm" variant="primary" onClick={onWord}><FileDown className="w-3.5 h-3.5" /> Word</Button>
+              <Button size="sm" onClick={text} title="Download as text"><FileText className="w-3.5 h-3.5" /></Button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="p-3 sm:p-5 bg-muted/30 max-h-[72vh] overflow-y-auto">
+        <article className="bg-white text-zinc-900 rounded-lg shadow-sm ring-1 ring-black/5 px-5 sm:px-8 py-6 sm:py-8">
+          <header className="border-b-2 border-[#0f2a3d] pb-4 mb-5 space-y-3">
+            <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.14em] text-zinc-500">
+              <span className="flex items-center gap-2"><img src="/logo.jpeg" alt="" width={18} height={18} className="rounded-sm" /> M.A.T.E draft</span>
+              <span className="font-mono normal-case tracking-normal">Ref {result.ref}</span>
+            </div>
+            <h2 className="font-display text-xl sm:text-2xl font-semibold leading-tight">{m.name}</h2>
+            <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-xs">
+              <div><dt className="text-zinc-500">Vessel</dt><dd className="font-medium">{profile.vessel_name ? `MV ${profile.vessel_name}` : '—'}</dd></div>
+              <div><dt className="text-zinc-500">Type</dt><dd className="font-medium">{profile.vessel_type || '—'}</dd></div>
+              <div><dt className="text-zinc-500">Prepared by</dt><dd className="font-medium truncate" title={prepared}>{prepared}</dd></div>
+              <div><dt className="text-zinc-500">Date</dt><dd className="font-medium">{when.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</dd></div>
+            </dl>
+            {result.documentsUsed.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="text-zinc-500">Based on</span>
+                {result.documentsUsed.map(d => <span key={d} className="inline-flex items-center gap-1 rounded-md bg-zinc-100 px-1.5 py-0.5"><FileText className="w-3 h-3 text-zinc-500" />{d}</span>)}
+              </div>
+            )}
+          </header>
+
+          {contents.length >= 3 && !editing && (
+            <nav aria-label="Contents" className="mb-5 flex flex-wrap gap-1.5">
+              {contents.map(h => (
+                <a key={h.id} href={`#${h.id}`} onClick={e => { e.preventDefault(); document.getElementById(h.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                  className="text-xs rounded-full border border-zinc-200 px-2.5 py-1 text-zinc-600 hover:border-[#575ECF] hover:text-[#575ECF]">{h.text}</a>
+              ))}
+            </nav>
+          )}
+
+          {editing
+            ? <textarea id="answer-edit" aria-label="Edit the answer" value={draft} onChange={e => setDraft(e.target.value)} rows={22} className={`${inputClass} font-mono text-[12.5px] leading-relaxed bg-white text-zinc-900`} />
+            : <Markdown text={result.text} idPrefix={idPrefix} />}
+
+          <footer className="mt-8 pt-3 border-t border-zinc-200 text-[11px] text-zinc-500 flex flex-wrap justify-between gap-2">
+            <span>Drafted by M.A.T.E for {profile.company_name || 'the vessel'}. Check against your SMS before use.</span>
+            {result.emailedTo && <span className="inline-flex items-center gap-1"><Mail className="w-3 h-3" /> Emailed to {result.emailedTo}</span>}
+          </footer>
+        </article>
+      </div>
+
+      <div className="px-4 sm:px-5 py-3 border-t border-border space-y-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-semibold text-muted-foreground mr-1 inline-flex items-center gap-1"><Wand2 className="w-3.5 h-3.5" /> Refine</span>
+          {REFINES.map(r => (
+            <button key={r.label} type="button" disabled={refining} onClick={() => onRefine(r)}
+              className="text-xs rounded-full border border-border px-2.5 py-1 hover:border-[#575ECF] hover:text-[#575ECF] disabled:opacity-50 transition">{r.label}</button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input id="refine-ask" value={ask} onChange={e => setAsk(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); custom(); } }}
+            placeholder="Ask for a change, e.g. add a section on PPE" className={`${inputClass} text-[13px]`} disabled={refining} />
+          <Button size="sm" onClick={custom} disabled={refining || !ask.trim()}>Revise</Button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">Each revision is a new version and uses one run. Earlier versions stay above.</p>
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          <Rate module={m} logId={result.logId} />
+          <button type="button" onClick={onEditRequest} className="ml-auto text-xs font-semibold text-muted-foreground hover:text-foreground inline-flex items-center gap-1"><PencilLine className="w-3.5 h-3.5" /> Change the request</button>
+        </div>
+      </div>
+
+      {refining && (
+        <div className="absolute inset-0 bg-card/70 backdrop-blur-[1px] rounded-xl flex items-center justify-center">
+          <div className="flex items-center gap-3 rounded-full bg-card shadow-lg ring-1 ring-border px-4 py-2 text-sm font-medium">
+            <span className="w-4 h-4 rounded-full border-2 border-[#575ECF]/20 border-t-[#575ECF] animate-spin motion-reduce:animate-none" /> Writing a new version…
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Thumbs up or down on this answer, with an optional note. Saved against the run for the analysts. */
+function Rate({ module: m, logId }: { module: Module; logId: string | null }) {
+  const { toast } = useOfficer();
+  const [rating, setRating] = useState<'up' | 'down' | null>(null);
+  const [note, setNote] = useState('');
+  const [sent, setSent] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+
+  const send = async (r: 'up' | 'down' | null, withNote: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token || ''}` },
+        body: JSON.stringify({ rating: r, feedback: withNote, agentCode: m.code, agentName: m.name, agentId: m.agentId, logId })
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Feedback could not be sent.');
+      return true;
+    } catch (err) {
+      toast((err as Error).message, 'error');
+      return false;
+    }
+  };
+
+  const pick = async (r: 'up' | 'down') => {
+    if (sent) return;
+    setRating(r);
+    if (r === 'down') { setNoteOpen(true); return; }
+    if (await send('up', '')) { setSent(true); toast('Thanks. Glad it helped.'); }
+  };
+
+  const sendNote = async () => {
+    if (await send(rating, note.trim())) { setSent(true); setNoteOpen(false); toast('Thanks. The M.A.T.E team will look at it.'); }
+  };
+
+  return (
+    <div className="flex flex-col gap-2 w-full sm:w-auto">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        {sent ? 'Thanks for the feedback.' : 'Was this useful?'}
+        <button type="button" disabled={sent} onClick={() => pick('up')} aria-pressed={rating === 'up'} aria-label="Useful"
+          className={`p-1.5 rounded-lg border ${rating === 'up' ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-border hover:bg-muted'} disabled:cursor-default`}><ThumbsUp className="w-3.5 h-3.5" /></button>
+        <button type="button" disabled={sent} onClick={() => pick('down')} aria-pressed={rating === 'down'} aria-label="Not useful"
+          className={`p-1.5 rounded-lg border ${rating === 'down' ? 'border-red-300 bg-red-50 text-red-700' : 'border-border hover:bg-muted'} disabled:cursor-default`}><ThumbsDown className="w-3.5 h-3.5" /></button>
+      </div>
+      {noteOpen && !sent && (
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input id="rate-note" value={note} onChange={e => setNote(e.target.value)} placeholder="What was wrong or missing? (optional)" className={`${inputClass} sm:w-72`} autoFocus
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); sendNote(); } }} />
+          <Button size="sm" variant="primary" onClick={sendNote}>Send</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** How to ask this module by email, with a per-module instruction sheet to keep on board. */
+function EmailHowTo({ module: m }: { module: Module }) {
+  const { profile, email, manual } = useOfficer();
+  const [open, setOpen] = useState(false);
+  const from = profile.vessel_email || email;
+  const keywords = m.keywords.slice(0, 6);
+
+  const download = () => {
+    const lines = [
+      `M.A.T.E: how to ask ${m.code} ${m.name} by email`,
+      '',
+      `TO:       ${MATE_EMAIL}`,
+      `FROM:     ${from} (your registered address)`,
+      `SUBJECT:  ${m.code}${keywords.length ? `  (or one of: ${keywords.join(', ')})` : ''}`,
+      'BODY:     One line saying what you need.',
+      '          Then a blank line, and any points the answer must include.',
+      'ATTACH:   Any PDF that helps, e.g. the office email asking for it.',
+      '',
+      'The more detail you give, the better the answer.',
+      m.emailExample ? `\nEXAMPLE\nSUBJECT: ${m.code}\nBODY:    ${m.emailExample}` : '',
+      manual.trim() ? `\n\n==== USER MANUAL ====\n\n${manual.trim()}` : ''
+    ];
+    downloadBlob(new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' }), `${m.code}_email_instructions.txt`);
+  };
+
+  return (
+    <Card>
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open} className="w-full px-5 py-3.5 flex items-center gap-2 text-sm font-semibold">
+        <Mail className="w-4 h-4 text-muted-foreground" /> Ask {m.code} by email instead
+        <ChevronDown className={`w-4 h-4 ml-auto text-muted-foreground transition ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="px-5 pb-5 space-y-3 text-sm">
+          <div className="rounded-lg bg-muted/50 p-3 font-mono text-[12.5px] space-y-1 break-words">
+            <div><span className="text-muted-foreground">To:</span> {MATE_EMAIL}</div>
+            <div><span className="text-muted-foreground">Subject:</span> {m.code}{keywords.length ? <span className="text-muted-foreground"> or {keywords.slice(0, 3).join(', ')}</span> : null}</div>
+            {m.emailExample && <div><span className="text-muted-foreground">Body:</span> {m.emailExample}</div>}
+          </div>
+          <p className="text-muted-foreground">Send it from {from}. The answer comes back by email and uses one run.</p>
+          <Button size="sm" onClick={download}><FileDown className="w-3.5 h-3.5" /> Download these instructions</Button>
+        </div>
+      )}
+    </Card>
   );
 }

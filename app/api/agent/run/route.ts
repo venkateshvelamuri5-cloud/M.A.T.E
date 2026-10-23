@@ -4,6 +4,8 @@ import { GeminiService } from '../../../../src/services/gemini';
 import { SmtpService } from '../../../../src/services/smtp';
 import { FileProcessor } from '../../../../src/services/fileProcessor';
 import { buildRetrievedContext, classifyDocument, contextBudgetFor, RetrievalFile } from '../../../../src/services/documents/retrieval';
+import { analystIds, consumeRun, limitMessage, refundRun, userFromRequest } from '../../../../src/services/limits';
+import { buildQueryForAgent, parseRequest } from '../../../dashboard/_lib/modules';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,13 +13,25 @@ export async function POST(req: NextRequest) {
   const gemini = new GeminiService();
   let userId: string | null = null;
   let agent: any = null;
+  let counted = false;
 
   try {
-    const { userId: reqUserId, agentId, queryInput, selectedFileIds, sendEmail } = await req.json();
-    userId = reqUserId;
+    // The officer is whoever the sign-in token belongs to, never a user id sent in the body.
+    const user = await userFromRequest(req);
+    if (!user) {
+      return NextResponse.json({ error: 'Your session has expired. Sign in again to run this module.' }, { status: 401 });
+    }
+    userId = user.id;
 
-    if (!userId || !agentId || !queryInput) {
-      return NextResponse.json({ error: 'Missing required parameters: userId, agentId, or queryInput' }, { status: 400 });
+    const body = await req.json();
+    const { agentId, selectedFileIds, sendEmail } = body;
+    // Older pages sent the whole prompt; only the officer's own words are kept from it.
+    const fromLegacy = parseRequest(typeof body.queryInput === 'string' ? body.queryInput : '');
+    const requirement: string = (typeof body.requirement === 'string' ? body.requirement : fromLegacy.requirement).trim();
+    const mustInclude: string = (typeof body.mustInclude === 'string' ? body.mustInclude : fromLegacy.mustInclude).trim();
+
+    if (!agentId || !requirement) {
+      return NextResponse.json({ error: 'Describe what you need before running the module.' }, { status: 400 });
     }
 
     // 1. Fetch user profile
@@ -46,7 +60,7 @@ export async function POST(req: NextRequest) {
     const limitMax = limits ? limits.max_interactions : 10;
 
     if (limitCount >= limitMax) {
-      return NextResponse.json({ error: 'Limit exceeded: 10/10 community interactions used. Upgrade via Stripe.' }, { status: 403 });
+      return NextResponse.json({ error: limitMessage(limitCount, limitMax, profile.subscription_plan), limitReached: true }, { status: 403 });
     }
 
     // 3. Fetch agent system prompt and classification info
@@ -62,9 +76,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Agent profile not found' }, { status: 404 });
     }
 
-    if ((agent.status && agent.status !== 'live') || agent.is_locked) {
-      return NextResponse.json({ error: 'This agent is paused by the analyst team. Please try again later.' }, { status: 423 });
+    if (agent.status === 'draft') {
+      return NextResponse.json({ error: 'This module isn\'t available yet.' }, { status: 404 });
     }
+    if ((agent.status && agent.status !== 'live') || agent.is_locked) {
+      return NextResponse.json({ error: 'This module is paused while the M.A.T.E team updates it. Please try again later.' }, { status: 423 });
+    }
+
+    // The agent's instructions are added here on the server, so the browser never sees or changes them.
+    const queryInput = buildQueryForAgent(agent, requirement, mustInclude);
 
     // Strategy 1: Intelligent Short-Circuit
     const queryLower = queryInput.toLowerCase().trim();
@@ -94,6 +114,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         result: templateResponse,
+        runsUsed: limitCount,
+        runsMax: limitMax,
         interactionsLimit: `${limitCount} / ${limitMax}`
       });
     }
@@ -116,6 +138,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         result: cachedResponse,
+        runsUsed: limitCount,
+        runsMax: limitMax,
         interactionsLimit: `${limitCount} / ${limitMax}`
       });
     }
@@ -169,11 +193,14 @@ export async function POST(req: NextRequest) {
     }
 
     // Fetch Global Knowledge Base files (where agent_id is null)
-    const { data: globalFiles } = await supabase
+    // Only documents an analyst shared count as company documents.
+    const trustedOwners = await analystIds();
+    const { data: globalFilesRaw } = await supabase
       .from('user_files')
       .select('*')
       .eq('file_type', 'knowledge_base')
       .is('agent_id', null);
+    const globalFiles = (globalFilesRaw || []).filter(f => trustedOwners.has(f.user_id));
 
     // Merge and deduplicate files by ID
     const allFiles = [
@@ -344,7 +371,13 @@ Mariner Profile:
 - User Email: ${profile.email}
 `;
 
-    // 6. Run Grounded Query
+    // 6. Count the run in one step (so two at once can't both slip under the limit), then run it.
+    const count = await consumeRun(userId);
+    if (!count.allowed) {
+      return NextResponse.json({ error: limitMessage(count.used, count.max, profile.subscription_plan), limitReached: true }, { status: 403 });
+    }
+    counted = true;
+
     let processedResult = await gemini.runGroundedQuery(
       queryInput,
       `${marinerProfilePrompt}\n\n${fileReferenceContext}`,
@@ -361,12 +394,7 @@ Mariner Profile:
     const disclaimer = `\n\n***\n[DISCLAIMER: M.A.T.E is an agentic AI assistant designed to support maritime operations. AI systems can make mistakes. Please re-verify all safety parameters, gas measurements, and checklist controls with your official vessel SMS and statutory guidelines before executing operations.]`;
     processedResult += disclaimer;
 
-    // 7. Increment limit and log interaction
-    await supabase
-      .from('usage_limits')
-      .update({ interactions_count: limitCount + 1 })
-      .eq('user_id', userId);
-
+    // 7. Log the interaction (the run was counted before the AI call)
     // Calculate Token Usage & Cost
     const totalInputText = (queryInput || '') + '\n' + (marinerProfilePrompt || '') + '\n' + (fileReferenceContext || '') + '\n' + (agent.system_prompt || '');
     let inputTokens = Math.ceil(totalInputText.length / 4);
@@ -390,11 +418,11 @@ Mariner Profile:
                     ((cachedTokens * cachedPricePerM) / 1000000) + 
                     ((outputTokens * outputPricePerM) / 1000000);
 
-    await supabase
+    const { data: logRow } = await supabase
       .from('interactions_log')
       .insert({
         user_id: userId,
-        subject: `Web Portal run: ${agent.name} - ${queryInput.substring(0, 30)}...`,
+        subject: `Web Portal run: ${agent.name} - ${requirement.substring(0, 30)}...`,
         status: 'Completed',
         agent_id: agentId,
         email_request: queryInput,
@@ -403,9 +431,12 @@ Mariner Profile:
         output_tokens: outputTokens,
         run_cost: parseFloat(runCost.toFixed(6)),
         routing_layer: 'Web Portal UI'
-      });
+      })
+      .select('id')
+      .maybeSingle();
 
     // Send email response if requested
+    let emailedTo: string | null = null;
     if (sendEmail) {
       try {
         const smtp = new SmtpService();
@@ -414,24 +445,36 @@ Mariner Profile:
           subject: `M.A.T.E Generated Response: ${agent.name}`,
           text: `Dear Officer,\n\nHere is the generated output from the M.A.T.E system for the agent slot: ${agent.name}.\n\n=== Generated Response ===\n\n${processedResult}\n\nBest regards,\nM.A.T.E Crew`
         });
+        emailedTo = profile.vessel_email || profile.email;
       } catch (emailErr) {
         console.error("Failed to send agent response email:", emailErr);
       }
     }
 
+    const documentsUsed = Array.from(new Set(Array.from(fileReferenceContext.matchAll(/\nFilename: (.+)\n/g)).map(m => m[1].trim())));
+
     return NextResponse.json({
       success: true,
       result: processedResult,
-      interactionsLimit: `${limitCount + 1} / ${limitMax}`
+      logId: logRow?.id || null,
+      documentsUsed,
+      emailedTo,
+      runsUsed: count.used,
+      runsMax: count.max,
+      interactionsLimit: `${count.used} / ${count.max}`
     });
 
   } catch (error) {
     console.error('Error running web agent:', error);
+    if (counted && userId) await refundRun(userId).catch(() => {});
+    if (!userId) {
+      return NextResponse.json({ error: 'An unexpected system error occurred. Please try again later.' }, { status: 500 });
+    }
     try {
       await supabase
         .from('interactions_log')
         .insert({
-          user_id: userId || '11111111-1111-1111-1111-111111111111',
+          user_id: userId,
           subject: `Web Portal run failed: ${agent?.name || 'Unknown Agent'}`,
           status: 'Failed',
           error_message: (error as Error).message || String(error),
