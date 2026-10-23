@@ -284,7 +284,10 @@ ${query}
         
         // [Safety Guard] sarvam-105b has a 128K-token context window shared by prompt and output.
         // Trim lower-priority documents to fit instead of dropping all grounding context.
-        const sarvamMaxTokens = Number(process.env.SARVAM_MAX_TOKENS) || 8192;
+        // Thinking and the answer share this limit. With 8,192 and the default thinking level, long agent
+        // instructions used every token on thinking and the answer came back empty (finish_reason "length").
+        const sarvamMaxTokens = Number(process.env.SARVAM_MAX_TOKENS) || 16384;
+        const sarvamEffort = process.env.SARVAM_REASONING_EFFORT || 'low';
         const sarvamContextTokens = 128000;
         const promptOverheadTokens = estimateTokens(activeSystemPrompt) + estimateTokens(buildUserMessage('')) + 1000;
         const contextBudgetTokens = sarvamContextTokens - sarvamMaxTokens - promptOverheadTokens;
@@ -294,8 +297,8 @@ ${query}
           finalUserMessage = buildUserMessage(fitContextToBudget(fullReferenceContext, contextBudgetTokens, keywords));
         }
 
-        // An empty reply is retried once, then treated as a failure so the run is refunded and logged as Failed
-        // instead of being saved as a "completed" answer that says nothing.
+        // An empty reply is retried once with thinking turned off, so the whole limit goes to the answer.
+        // If that is empty too the run fails (and is refunded) instead of saving an answer that says nothing.
         let finishReason = '';
         for (let attempt = 1; attempt <= 2; attempt++) {
           const response = await fetch('https://api.sarvam.ai/v1/chat/completions', {
@@ -307,6 +310,7 @@ ${query}
             body: JSON.stringify({
               model: sarvamModel,
               max_tokens: sarvamMaxTokens,
+              reasoning_effort: attempt === 1 ? sarvamEffort : null,
               temperature: 0.7,
               messages: [
                 { role: 'system', content: activeSystemPrompt },
