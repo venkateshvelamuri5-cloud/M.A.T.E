@@ -355,6 +355,19 @@ export async function POST(req: NextRequest) {
       fileReferenceContext += await buildRetrievedContext(readyFiles, keywords, contextBudgetFor(agent.llm_provider));
     }
 
+    // The officer's answers to this agent's form questions, the same as the email route sends.
+    const { data: settings } = await supabase
+      .from('user_agent_settings')
+      .select('answers')
+      .eq('user_id', userId)
+      .eq('agent_id', agentId)
+      .maybeSingle();
+    const answered = Object.entries((settings?.answers || {}) as Record<string, string>).filter(([, a]) => String(a || '').trim());
+    if (answered.length > 0) {
+      const answersContext = answered.map(([q, a]) => `Q: ${q}\nA: ${a}`).join('\n\n');
+      fileReferenceContext = `=== USER MODULE SETTINGS ===\n${answersContext}\n==========================\n\n${fileReferenceContext}`;
+    }
+
     // 5. Ingest profile metadata directly into grounding prompt to personalize output
     const marinerProfilePrompt = `
 Vessel Particulars & Systems:
