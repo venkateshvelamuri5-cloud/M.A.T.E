@@ -8,6 +8,8 @@ import { analystIds, consumeRun, limitMessage, refundRun, userFromRequest } from
 import { buildQueryForAgent, parseRequest } from '../../../dashboard/_lib/modules';
 
 export const dynamic = 'force-dynamic';
+// Large documents and slower models can take more than the default limit.
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   const gemini = new GeminiService();

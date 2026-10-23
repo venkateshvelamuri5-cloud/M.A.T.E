@@ -136,6 +136,17 @@ function RunModule({ module: m }: { module: Module }) {
     }
   };
 
+  /** The answer saved for this module since the request started, if the server finished but the reply didn't arrive. */
+  const savedAnswer = async (since: number) => {
+    const { data } = await supabase.from('interactions_log')
+      .select('id, email_response')
+      .eq('user_id', userId).eq('agent_id', m.agentId).eq('status', 'Completed')
+      .gte('created_at', new Date(since - 15000).toISOString())
+      .order('created_at', { ascending: false }).limit(1);
+    const row = data?.[0];
+    return row?.email_response ? { result: row.email_response as string, logId: row.id as string } : null;
+  };
+
   const submit = async (e?: React.FormEvent | null, refine?: { label: string; instruction: string }) => {
     e?.preventDefault();
     if (running) return;
@@ -158,9 +169,11 @@ function RunModule({ module: m }: { module: Module }) {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ agentId: m.agentId, requirement: asked, mustInclude: mustInclude.trim(), selectedFileIds: selected, sendEmail: emailMe })
       });
-      const data = await res.json().catch(() => ({}));
+      let data = await res.json().catch(() => ({}));
       if (res.status === 401) { toast('Your session has expired. Sign in again.', 'error'); router.push('/login'); return; }
-      if (!res.ok) { setError({ message: data.error || 'The module couldn\'t finish. Please try again.', limit: !!data.limitReached }); return; }
+      // A timeout or a lost connection can happen after the answer was saved, so look for it before showing an error.
+      if (!res.ok && !data.error) data = (await savedAnswer(started)) || data;
+      if (!data.result) { setError({ message: data.error || 'The module couldn\'t finish. Please try again.', limit: !!data.limitReached }); return; }
 
       const raw: string = data.result || '';
       const cached = raw.startsWith(CACHED_PREFIX);
@@ -177,7 +190,9 @@ function RunModule({ module: m }: { module: Module }) {
       if (window.innerWidth < 1024) setTimeout(() => answerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
       refresh();
     } catch {
-      setError({ message: 'Couldn\'t reach M.A.T.E. Check your connection and try again.' });
+      const saved = await savedAnswer(started).catch(() => null);
+      if (saved) { setResults([{ text: saved.result, logId: saved.logId, documentsUsed: [], emailedTo: null, cached: false, seconds: Math.round((Date.now() - started) / 1000), label: refine?.label || 'Original', createdAt: new Date().toISOString(), ref: `MATE-${m.code}` }]); setActive(0); refresh(); }
+      else setError({ message: 'Couldn\'t reach M.A.T.E. Check your connection and try again.' });
     } finally {
       setRunning(false);
     }
