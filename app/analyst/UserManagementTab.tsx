@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '../../src/supabase-client';
+import { logChange } from './_lib/audit';
 
 export default function UserManagementTab() {
   const [users, setUsers] = useState<any[]>([]);
@@ -30,20 +31,28 @@ export default function UserManagementTab() {
     setLoading(false);
   };
 
-  const updateLimit = async (userId: string, limitId: string, newLimit: number) => {
+  const updateLimit = async (user: any, newLimit: number) => {
+    const { id: userId, limit_id: limitId } = user;
+    if (Number.isNaN(newLimit) || newLimit === user.max_interactions) return;
     if (limitId) {
       await supabase.from('usage_limits').update({ max_interactions: newLimit }).eq('id', limitId);
     } else {
       await supabase.from('usage_limits').insert({ user_id: userId, max_interactions: newLimit });
     }
+    await logChange({
+      action: 'limit.update',
+      entityType: 'user',
+      entityId: userId,
+      summary: `Changed ${user.email}'s limit from ${user.max_interactions} to ${newLimit} runs`
+    });
     fetchUsers();
   };
 
   if (loading) return <div className="p-8 text-center">Loading users...</div>;
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-border p-6 overflow-hidden">
-      <h2 className="text-lg font-bold mb-4">User Management & Quotas</h2>
+    <div className="bg-card rounded-xl border border-border p-6 overflow-hidden">
+      <h2 className="text-sm font-semibold mb-4">Run limits</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-sm text-left">
           <thead className="text-xs text-muted-foreground uppercase bg-gray-50 border-b">
@@ -70,7 +79,7 @@ export default function UserManagementTab() {
                   <input 
                     type="number" 
                     defaultValue={u.max_interactions}
-                    onBlur={(e) => updateLimit(u.id, u.limit_id, parseInt(e.target.value))}
+                    onBlur={(e) => updateLimit(u, parseInt(e.target.value))}
                     className="w-20 px-2 py-1 border rounded text-xs"
                   />
                 </td>

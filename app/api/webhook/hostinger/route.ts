@@ -396,9 +396,11 @@ export async function POST(req: NextRequest) {
     let selectedAgentLlmProvider = 'groq';
 
     try {
-      const { data: dbAgents } = await supabase
+      const { data: allAgents } = await supabase
         .from('agents')
         .select('*');
+      // Paused and draft agents never receive email. Rows without a status predate it and count as live.
+      const dbAgents = (allAgents || []).filter(a => !a.status || a.status === 'live');
 
       if (dbAgents && dbAgents.length > 0) {
 

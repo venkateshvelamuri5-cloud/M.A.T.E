@@ -928,7 +928,10 @@ export default function UserDashboard() {
         .from('agents')
         .select('*');
       if (dbAgents) {
-        setAgents(dbAgents);
+        // Drafts are hidden from officers; paused agents show with a lock.
+        setAgents(dbAgents
+          .filter(a => a.status !== 'draft')
+          .map(a => ({ ...a, is_locked: a.is_locked || a.status === 'paused' })));
       }
 
       const { data: dbTemplates } = await supabase
