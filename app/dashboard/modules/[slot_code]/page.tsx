@@ -499,9 +499,10 @@ export default function ModulePage({ params }: { params: { slot_code: string } }
         
         // Find matching agent slot template
         const baseSlot = AGENT_SLOTS.find(s => s.code === slotCode);
-        const dbAgent = dbAgents.find(a => a.slot_code === slotCode);
+        // Drafts are hidden from officers; paused agents show with a lock.
+        const dbAgent = dbAgents.find(a => a.slot_code === slotCode && a.status !== 'draft');
 
-        if (dbAgent && dbAgent.is_locked) {
+        if (dbAgent && (dbAgent.is_locked || dbAgent.status === 'paused')) {
           setIsLocked(true);
         }
 

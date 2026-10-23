@@ -62,6 +62,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Agent profile not found' }, { status: 404 });
     }
 
+    if ((agent.status && agent.status !== 'live') || agent.is_locked) {
+      return NextResponse.json({ error: 'This agent is paused by the analyst team. Please try again later.' }, { status: 423 });
+    }
+
     // Strategy 1: Intelligent Short-Circuit
     const queryLower = queryInput.toLowerCase().trim();
     const isTemplateRequest = 
