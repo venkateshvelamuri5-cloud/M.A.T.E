@@ -2,12 +2,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Check, ChevronDown, Copy, FileDown, FileText, Lock, Mail, PencilLine, ThumbsDown, ThumbsUp, Upload } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, Copy, FileDown, FileText, Lock, Mail, PencilLine, ThumbsDown, ThumbsUp, Upload, Wand2 } from 'lucide-react';
 import { supabase } from '../../../../src/supabase-client';
 import { useOfficer } from '../../_lib/officer';
 import { MATE_EMAIL, Module, safeFileName, storageLimitMb } from '../../_lib/modules';
 import { uploadOfficerFile, UPLOAD_ACCEPT, usedMb } from '../../_lib/files';
-import { downloadBlob, Markdown, markdownToDocx } from '../../_lib/markdown';
+import { downloadBlob, headingsOf, Markdown, markdownToDocx } from '../../_lib/markdown';
 import { AGENT_SLOTS_TEMPLATE } from '../../../analyst/_lib/slots';
 import { Button, Card, Chip, Field, Meter, SlotCode, Toggle, fileStatusChip, formatMb, inputClass } from '../../_lib/ui';
 
@@ -20,6 +20,10 @@ interface Result {
   emailedTo: string | null;
   cached: boolean;
   seconds: number;
+  label: string;
+  createdAt: string;
+  ref: string;
+  edited?: boolean;
 }
 
 export default function ModulePage({ params }: { params: { slot_code: string } }) {
@@ -69,7 +73,9 @@ function RunModule({ module: m }: { module: Module }) {
   const [wordWhenReady, setWordWhenReady] = useState(false);
   const [running, setRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
-  const [result, setResult] = useState<Result | null>(null);
+  const [results, setResults] = useState<Result[]>([]);
+  const [active, setActive] = useState(0);
+  const result: Result | null = results[active] || null;
   const [error, setError] = useState<{ message: string; limit?: boolean } | null>(null);
   const [uploading, setUploading] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -115,15 +121,22 @@ function RunModule({ module: m }: { module: Module }) {
     }
   };
 
-  const downloadWord = async (text: string) => {
+  const downloadWord = async (r: Result) => {
     try {
-      downloadBlob(await markdownToDocx(`${m.code} ${m.name}`, text), `${m.code}_${safeFileName(m.name)}.docx`);
+      const when = new Date(r.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+      const meta = [
+        profile.vessel_name ? `Vessel: MV ${profile.vessel_name}${profile.vessel_type ? ` (${profile.vessel_type})` : ''}` : '',
+        `Prepared by: ${[profile.rank, profile.full_name].filter(Boolean).join(' ') || email}${profile.company_name ? `, ${profile.company_name}` : ''}`,
+        `Date: ${when} · Ref ${r.ref}`,
+        r.documentsUsed.length ? `Based on: ${r.documentsUsed.join(', ')}` : ''
+      ].filter(Boolean);
+      downloadBlob(await markdownToDocx(m.name, r.text, meta), `${m.code}_${safeFileName(m.name)}_${r.ref.slice(-13)}.docx`);
     } catch (err) {
       toast(`Couldn't make the Word file: ${(err as Error).message}`, 'error');
     }
   };
 
-  const submit = async (e?: React.FormEvent) => {
+  const submit = async (e?: React.FormEvent | null, refine?: { label: string; instruction: string }) => {
     e?.preventDefault();
     if (running) return;
     if (!requirement.trim()) {
@@ -133,8 +146,9 @@ function RunModule({ module: m }: { module: Module }) {
     }
     setRunning(true);
     setError(null);
-    setResult(null);
+    if (!refine) { setResults([]); setActive(0); }
     const started = Date.now();
+    const asked = refine ? `${requirement.trim()}\n\n${refine.instruction}` : requirement.trim();
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { router.push('/login'); return; }
@@ -142,7 +156,7 @@ function RunModule({ module: m }: { module: Module }) {
         method: 'POST',
         cache: 'no-store',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ agentId: m.agentId, requirement: requirement.trim(), mustInclude: mustInclude.trim(), selectedFileIds: selected, sendEmail: emailMe })
+        body: JSON.stringify({ agentId: m.agentId, requirement: asked, mustInclude: mustInclude.trim(), selectedFileIds: selected, sendEmail: emailMe })
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 401) { toast('Your session has expired. Sign in again.', 'error'); router.push('/login'); return; }
@@ -151,9 +165,15 @@ function RunModule({ module: m }: { module: Module }) {
       const raw: string = data.result || '';
       const cached = raw.startsWith(CACHED_PREFIX);
       const text = cached ? raw.slice(CACHED_PREFIX.length).trimStart() : raw;
-      setResult({ text, logId: data.logId || null, documentsUsed: data.documentsUsed || [], emailedTo: data.emailedTo || null, cached, seconds: Math.round((Date.now() - started) / 1000) });
+      const now = new Date();
+      const stamp = now.toISOString().slice(0, 16).replace(/[-:T]/g, '').replace(/^(\d{8})/, '$1-');
+      const next: Result = {
+        text, logId: data.logId || null, documentsUsed: data.documentsUsed || [], emailedTo: data.emailedTo || null, cached,
+        seconds: Math.round((Date.now() - started) / 1000), label: refine?.label || 'Original', createdAt: now.toISOString(), ref: `MATE-${m.code}-${stamp}`
+      };
+      setResults(rs => { const all = refine ? [...rs, next] : [next]; setActive(all.length - 1); return all; });
       if (typeof data.runsUsed === 'number') setRuns(data.runsUsed, data.runsMax);
-      if (wordWhenReady) downloadWord(text);
+      if (wordWhenReady && !refine) downloadWord(next);
       if (window.innerWidth < 1024) setTimeout(() => answerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
       refresh();
     } catch {
@@ -270,7 +290,7 @@ function RunModule({ module: m }: { module: Module }) {
 
         <div ref={answerRef} className="lg:sticky lg:top-20 min-w-0">
           <Card className="min-h-[420px] flex flex-col">
-            {running ? (
+            {running && !result ? (
               <Waiting seconds={elapsed} documents={selected.length} />
             ) : error ? (
               <div className="p-6 space-y-3">
@@ -279,7 +299,17 @@ function RunModule({ module: m }: { module: Module }) {
                 {error.limit && plan !== 'premium' && <Button variant="primary" onClick={startUpgrade}>Upgrade</Button>}
               </div>
             ) : result ? (
-              <Answer module={m} result={result} onWord={() => downloadWord(result.text)} onEdit={() => requirementRef.current?.focus()} />
+              <Answer
+                module={m}
+                results={results}
+                active={active}
+                onSelect={setActive}
+                onChange={t => setResults(rs => rs.map((r, i) => i === active ? { ...r, text: t, edited: true } : r))}
+                onRefine={r => submit(null, r)}
+                refining={running}
+                onWord={() => downloadWord(result)}
+                onEditRequest={() => requirementRef.current?.focus()}
+              />
             ) : (
               <EmptyAnswer module={m} onProfile={openProfile} profileShort={!profile.vessel_type || !profile.vessel_name} />
             )}
@@ -324,9 +354,30 @@ function EmptyAnswer({ module: m, onProfile, profileShort }: { module: Module; o
   );
 }
 
-function Answer({ module: m, result, onWord, onEdit }: { module: Module; result: Result; onWord: () => void; onEdit: () => void }) {
-  const { toast } = useOfficer();
+const REFINES = [
+  { label: 'Shorter', instruction: 'Keep the same content but make the answer shorter and more concise.' },
+  { label: 'More detail', instruction: 'Expand the answer with more detail, specific steps and responsibilities on board.' },
+  { label: 'As a checklist', instruction: 'Present the answer as a checklist with tick boxes that can be used on board.' },
+  { label: 'More formal', instruction: 'Rewrite the answer in a formal tone suitable for sending to the office, flag or class.' },
+  { label: 'Add regulations', instruction: 'Add references to the relevant regulations (SOLAS, MARPOL, ISM Code, STCW, MLC, flag or class rules) where they apply.' }
+];
+
+/** The answer, laid out like a ship's document: letterhead, contents, versions, edit, refine and rating. */
+function Answer({ module: m, results, active, onSelect, onChange, onRefine, refining, onWord, onEditRequest }: {
+  module: Module; results: Result[]; active: number; onSelect: (i: number) => void; onChange: (text: string) => void;
+  onRefine: (r: { label: string; instruction: string }) => void; refining: boolean; onWord: () => void; onEditRequest: () => void;
+}) {
+  const { toast, profile, email } = useOfficer();
+  const result = results[active];
   const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [ask, setAsk] = useState('');
+  const idPrefix = `ans-${active}`;
+  const contents = headingsOf(result.text, idPrefix);
+
+  useEffect(() => { setEditing(false); }, [active]);
+
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(result.text);
@@ -336,31 +387,115 @@ function Answer({ module: m, result, onWord, onEdit }: { module: Module; result:
       toast('Copy isn\'t available here. Select the text instead.', 'error');
     }
   };
-  const text = () => {
-    const blob = new Blob([result.text], { type: 'text/plain;charset=utf-8' });
-    downloadBlob(blob, `${m.code}_${safeFileName(m.name)}.txt`);
-  };
+  const text = () => downloadBlob(new Blob([result.text], { type: 'text/plain;charset=utf-8' }), `${m.code}_${safeFileName(m.name)}.txt`);
+  const startEdit = () => { setDraft(result.text); setEditing(true); };
+  const saveEdit = () => { onChange(draft); setEditing(false); toast('Your edits are used for Copy and downloads.'); };
+  const custom = () => { if (ask.trim()) { onRefine({ label: ask.trim().slice(0, 24), instruction: ask.trim() }); setAsk(''); } };
+
+  const when = new Date(result.createdAt);
+  const prepared = [profile.rank, profile.full_name].filter(Boolean).join(' ') || email;
 
   return (
-    <div className="flex flex-col">
-      <div className="px-5 sm:px-6 py-3 border-b border-border flex flex-wrap items-center gap-2">
-        <Chip tone="green"><Check className="w-3 h-3" /> {result.cached ? 'Same request as earlier today' : `Done in ${result.seconds} s`}</Chip>
-        {result.cached && <span className="text-xs text-muted-foreground">Earlier answer reused, no run used</span>}
-        {result.emailedTo && <span className="text-xs text-muted-foreground inline-flex items-center gap-1"><Mail className="w-3.5 h-3.5" /> Sent to {result.emailedTo}</span>}
+    <div className="flex flex-col relative">
+      <div className="px-4 sm:px-5 py-2.5 border-b border-border flex flex-wrap items-center gap-2 bg-muted/30 rounded-t-xl">
+        {results.length > 1 ? (
+          <div className="flex gap-1 overflow-x-auto max-w-full" role="tablist" aria-label="Versions">
+            {results.map((r, i) => (
+              <button key={i} type="button" role="tab" aria-selected={i === active} onClick={() => onSelect(i)}
+                className={`text-xs px-2.5 py-1 rounded-lg whitespace-nowrap transition ${i === active ? 'bg-card shadow-sm font-semibold text-foreground ring-1 ring-border' : 'text-muted-foreground hover:text-foreground'}`}>
+                v{i + 1} · {r.label}{r.edited ? ' (edited)' : ''}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <Chip tone="green"><Check className="w-3 h-3" /> {result.cached ? 'Same request as earlier today' : `Ready in ${result.seconds} s`}</Chip>
+        )}
         <div className="ml-auto flex gap-1.5">
-          <Button size="sm" onClick={copy}>{copied ? <><Check className="w-3.5 h-3.5" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}</Button>
-          <Button size="sm" onClick={onWord}><FileDown className="w-3.5 h-3.5" /> Word</Button>
-          <Button size="sm" onClick={text}><FileText className="w-3.5 h-3.5" /> Text</Button>
+          {editing ? (
+            <>
+              <Button size="sm" onClick={() => setEditing(false)}>Cancel</Button>
+              <Button size="sm" variant="primary" onClick={saveEdit}>Save edits</Button>
+            </>
+          ) : (
+            <>
+              <Button size="sm" onClick={startEdit} title="Edit the answer before you copy or download it"><PencilLine className="w-3.5 h-3.5" /><span className="hidden sm:inline"> Edit</span></Button>
+              <Button size="sm" onClick={copy}>{copied ? <><Check className="w-3.5 h-3.5" /><span className="hidden sm:inline"> Copied</span></> : <><Copy className="w-3.5 h-3.5" /><span className="hidden sm:inline"> Copy</span></>}</Button>
+              <Button size="sm" variant="primary" onClick={onWord}><FileDown className="w-3.5 h-3.5" /> Word</Button>
+              <Button size="sm" onClick={text} title="Download as text"><FileText className="w-3.5 h-3.5" /></Button>
+            </>
+          )}
         </div>
       </div>
-      {result.documentsUsed.length > 0 && (
-        <div className="px-5 sm:px-6 pt-3 text-xs text-muted-foreground">Based on: {result.documentsUsed.join(', ')}</div>
-      )}
-      <div className="px-5 sm:px-6 py-5 max-h-[70vh] overflow-y-auto"><Markdown text={result.text} /></div>
-      <div className="px-5 sm:px-6 py-3 border-t border-border flex flex-wrap items-center gap-3">
-        <Rate module={m} logId={result.logId} />
-        <button type="button" onClick={onEdit} className="ml-auto text-xs font-semibold text-muted-foreground hover:text-foreground inline-flex items-center gap-1"><PencilLine className="w-3.5 h-3.5" /> Edit request</button>
+
+      <div className="p-3 sm:p-5 bg-muted/30 max-h-[72vh] overflow-y-auto">
+        <article className="bg-white text-zinc-900 rounded-lg shadow-sm ring-1 ring-black/5 px-5 sm:px-8 py-6 sm:py-8">
+          <header className="border-b-2 border-[#0f2a3d] pb-4 mb-5 space-y-3">
+            <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.14em] text-zinc-500">
+              <span className="flex items-center gap-2"><img src="/logo.jpeg" alt="" width={18} height={18} className="rounded-sm" /> M.A.T.E draft</span>
+              <span className="font-mono normal-case tracking-normal">Ref {result.ref}</span>
+            </div>
+            <h2 className="font-display text-xl sm:text-2xl font-semibold leading-tight">{m.name}</h2>
+            <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-xs">
+              <div><dt className="text-zinc-500">Vessel</dt><dd className="font-medium">{profile.vessel_name ? `MV ${profile.vessel_name}` : '—'}</dd></div>
+              <div><dt className="text-zinc-500">Type</dt><dd className="font-medium">{profile.vessel_type || '—'}</dd></div>
+              <div><dt className="text-zinc-500">Prepared by</dt><dd className="font-medium truncate" title={prepared}>{prepared}</dd></div>
+              <div><dt className="text-zinc-500">Date</dt><dd className="font-medium">{when.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</dd></div>
+            </dl>
+            {result.documentsUsed.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="text-zinc-500">Based on</span>
+                {result.documentsUsed.map(d => <span key={d} className="inline-flex items-center gap-1 rounded-md bg-zinc-100 px-1.5 py-0.5"><FileText className="w-3 h-3 text-zinc-500" />{d}</span>)}
+              </div>
+            )}
+          </header>
+
+          {contents.length >= 3 && !editing && (
+            <nav aria-label="Contents" className="mb-5 flex flex-wrap gap-1.5">
+              {contents.map(h => (
+                <a key={h.id} href={`#${h.id}`} onClick={e => { e.preventDefault(); document.getElementById(h.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                  className="text-xs rounded-full border border-zinc-200 px-2.5 py-1 text-zinc-600 hover:border-[#575ECF] hover:text-[#575ECF]">{h.text}</a>
+              ))}
+            </nav>
+          )}
+
+          {editing
+            ? <textarea id="answer-edit" aria-label="Edit the answer" value={draft} onChange={e => setDraft(e.target.value)} rows={22} className={`${inputClass} font-mono text-[12.5px] leading-relaxed bg-white text-zinc-900`} />
+            : <Markdown text={result.text} idPrefix={idPrefix} />}
+
+          <footer className="mt-8 pt-3 border-t border-zinc-200 text-[11px] text-zinc-500 flex flex-wrap justify-between gap-2">
+            <span>Drafted by M.A.T.E for {profile.company_name || 'the vessel'}. Check against your SMS before use.</span>
+            {result.emailedTo && <span className="inline-flex items-center gap-1"><Mail className="w-3 h-3" /> Emailed to {result.emailedTo}</span>}
+          </footer>
+        </article>
       </div>
+
+      <div className="px-4 sm:px-5 py-3 border-t border-border space-y-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs font-semibold text-muted-foreground mr-1 inline-flex items-center gap-1"><Wand2 className="w-3.5 h-3.5" /> Refine</span>
+          {REFINES.map(r => (
+            <button key={r.label} type="button" disabled={refining} onClick={() => onRefine(r)}
+              className="text-xs rounded-full border border-border px-2.5 py-1 hover:border-[#575ECF] hover:text-[#575ECF] disabled:opacity-50 transition">{r.label}</button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input id="refine-ask" value={ask} onChange={e => setAsk(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); custom(); } }}
+            placeholder="Ask for a change, e.g. add a section on PPE" className={`${inputClass} text-[13px]`} disabled={refining} />
+          <Button size="sm" onClick={custom} disabled={refining || !ask.trim()}>Revise</Button>
+        </div>
+        <p className="text-[11px] text-muted-foreground">Each revision is a new version and uses one run. Earlier versions stay above.</p>
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          <Rate module={m} logId={result.logId} />
+          <button type="button" onClick={onEditRequest} className="ml-auto text-xs font-semibold text-muted-foreground hover:text-foreground inline-flex items-center gap-1"><PencilLine className="w-3.5 h-3.5" /> Change the request</button>
+        </div>
+      </div>
+
+      {refining && (
+        <div className="absolute inset-0 bg-card/70 backdrop-blur-[1px] rounded-xl flex items-center justify-center">
+          <div className="flex items-center gap-3 rounded-full bg-card shadow-lg ring-1 ring-border px-4 py-2 text-sm font-medium">
+            <span className="w-4 h-4 rounded-full border-2 border-[#575ECF]/20 border-t-[#575ECF] animate-spin motion-reduce:animate-none" /> Writing a new version…
+          </div>
+        </div>
+      )}
     </div>
   );
 }

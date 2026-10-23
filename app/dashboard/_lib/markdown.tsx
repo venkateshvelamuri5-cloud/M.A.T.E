@@ -113,7 +113,14 @@ function Inline({ text }: { text: string }) {
 
 const HEADING_CLASS = ['', 'text-xl font-bold mt-6', 'text-lg font-bold mt-6', 'text-base font-bold mt-5', 'text-sm font-bold mt-4', 'text-sm font-semibold mt-4', 'text-sm font-semibold mt-4'];
 
-export function Markdown({ text }: { text: string }) {
+/** Headings in an answer, for a contents list. Ids match the ones Markdown gives with the same prefix. */
+export function headingsOf(text: string, idPrefix: string) {
+  return parseMarkdown(text)
+    .map((b, i) => b.type === 'heading' && b.level <= 3 ? { id: `${idPrefix}-${i}`, text: b.text.replace(/[*_`]/g, ''), level: b.level } : null)
+    .filter(Boolean) as { id: string; text: string; level: number }[];
+}
+
+export function Markdown({ text, idPrefix }: { text: string; idPrefix?: string }) {
   const blocks = parseMarkdown(text);
   return (
     <div className="text-sm leading-relaxed text-foreground space-y-3 break-words [&>*:first-child]:mt-0">
@@ -121,7 +128,7 @@ export function Markdown({ text }: { text: string }) {
         switch (b.type) {
           case 'heading': {
             const Tag = `h${Math.min(b.level + 1, 6)}` as keyof JSX.IntrinsicElements;
-            return <Tag key={i} className={`${HEADING_CLASS[b.level]} font-display text-foreground`}><Inline text={b.text} /></Tag>;
+            return <Tag key={i} id={idPrefix ? `${idPrefix}-${i}` : undefined} className={`${HEADING_CLASS[b.level]} font-display text-foreground scroll-mt-24`}><Inline text={b.text} /></Tag>;
           }
           case 'paragraph': return <p key={i}><Inline text={b.text} /></p>;
           case 'list': {
@@ -158,7 +165,7 @@ export function Markdown({ text }: { text: string }) {
 }
 
 /** Builds a Word document from an answer. docx is loaded only when someone downloads. */
-export async function markdownToDocx(title: string, text: string): Promise<Blob> {
+export async function markdownToDocx(title: string, text: string, meta: string[] = []): Promise<Blob> {
   const d = await import('docx');
   const runs = (t: string, extra: { bold?: boolean } = {}) =>
     parseInline(t).flatMap(s => s.text.split('\n').map((p, j) => new d.TextRun({
@@ -167,6 +174,11 @@ export async function markdownToDocx(title: string, text: string): Promise<Blob>
   const headingLevels = [d.HeadingLevel.HEADING_1, d.HeadingLevel.HEADING_1, d.HeadingLevel.HEADING_2, d.HeadingLevel.HEADING_3, d.HeadingLevel.HEADING_4, d.HeadingLevel.HEADING_5, d.HeadingLevel.HEADING_6];
 
   const children: any[] = [new d.Paragraph({ heading: d.HeadingLevel.TITLE, children: [new d.TextRun(title)] })];
+  meta.forEach((line, i) => children.push(new d.Paragraph({
+    children: [new d.TextRun({ text: line, color: '666666', size: 18 })],
+    spacing: { after: i === meta.length - 1 ? 240 : 0 },
+    border: i === meta.length - 1 ? { bottom: { style: d.BorderStyle.SINGLE, size: 6, color: 'BBBBBB', space: 6 } } : undefined
+  })));
   for (const b of parseMarkdown(text)) {
     if (b.type === 'heading') children.push(new d.Paragraph({ heading: headingLevels[b.level], children: runs(b.text) }));
     else if (b.type === 'paragraph') children.push(new d.Paragraph({ children: runs(b.text), spacing: { after: 120 } }));

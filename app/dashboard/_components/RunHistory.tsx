@@ -69,7 +69,7 @@ export default function RunHistory() {
   );
 }
 
-function RunDialog({ log, onClose }: { log: RunLog | null; onClose: () => void }) {
+export function RunDialog({ log, onClose }: { log: RunLog | null; onClose: () => void }) {
   const router = useRouter();
   const { modules, toast } = useOfficer();
   if (!log) return <Dialog open={false} onClose={onClose} title=""><span /></Dialog>;

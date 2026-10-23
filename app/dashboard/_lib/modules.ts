@@ -140,3 +140,56 @@ export function fileExtension(name: string) {
 export function safeFileName(s: string) {
   return s.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') || 'response';
 }
+
+// Everyday words officers use for each module, beyond the keywords the analysts set.
+const HINTS: Record<string, string[]> = {
+  A1: ['risk', 'ra', 'hazard', 'hazards', 'jha', 'jsa', 'assessment', 'unsafe', 'aloft', 'enclosed', 'hot work', 'defect', 'inoperative', 'not working', 'failure', 'breakdown'],
+  A2: ['audit', 'capa', 'psc', 'deficiency', 'deficiencies', 'finding', 'findings', 'non conformity', 'nc', 'observation', 'root cause', 'inspection', 'closure'],
+  A3: ['drill', 'drills', 'muster', 'abandon ship', 'fire drill', 'man overboard', 'emergency'],
+  A4: ['training', 'minutes', 'meeting', 'toolbox', 'familiarisation', 'familiarization', 'session'],
+  B1: ['payroll', 'wages', 'wage', 'salary', 'overtime', 'allotment', 'allotments'],
+  B2: ['accounts', 'cash', 'master cash', 'welfare', 'disbursement', 'expenses'],
+  B3: ['bond', 'slop chest', 'bonded', 'cigarettes', 'store sales'],
+  B4: ['victualling', 'provisions', 'catering', 'food', 'man day', 'galley'],
+  C1: ['port papers', 'crew list', 'clearance', 'immigration', 'customs', 'declaration', 'arrival'],
+  C2: ['stcw', 'certificate', 'certificates', 'endorsement', 'coc', 'medical', 'sea service'],
+  C3: ['sire', 'vetting', 'oil major', 'inspection questions', 'viq'],
+  D1: ['voyage', 'voyage orders', 'charterer', 'charter party', 'instructions', 'eta', 'speed', 'consumption'],
+  D2: ['cargo', 'ullage', 'trim', 'draft', 'density', 'loading', 'discharge', 'stability', 'calculation'],
+  E1: ['library', 'publications', 'charts', 'books', 'nautical publications'],
+  E2: ['ship certificates', 'survey', 'surveys', 'expiry', 'class', 'statutory'],
+  E3: ['medicine', 'medical chest', 'drugs', 'first aid', 'hospital'],
+  F1: ['sms', 'procedure', 'procedures', 'manual', 'policy', 'company', 'checklist', 'bunkering', 'permit'],
+  F2: ['weather', 'cyclone', 'storm', 'routing', 'swell', 'wind', 'forecast', 'typhoon', 'hurricane'],
+  F4: ['question', 'what is', 'how to', 'explain', 'regulation', 'marpol', 'solas', 'colreg']
+};
+
+export interface Suggestion { module: Module; score: number }
+
+/** Ranks modules for a free-text request: analyst keywords first, then everyday words, name and description. */
+export function suggestModules(text: string, modules: Module[], limit = 3): Suggestion[] {
+  const q = ` ${text.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ')} `;
+  if (q.trim().length < 3) return [];
+  const has = (term: string) => term.length > 1 && q.includes(` ${term.toLowerCase().trim()} `) ||
+    (term.length > 4 && q.includes(` ${term.toLowerCase().trim()}`));
+  const scored = modules.filter(m => !m.paused).map(m => {
+    let score = 0;
+    if (q.includes(` ${m.code.toLowerCase()} `)) score += 10;
+    m.keywords.forEach(k => { if (has(k)) score += 4; });
+    (HINTS[m.code] || []).forEach(k => { if (has(k)) score += 3; });
+    m.name.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 3).forEach(w => { if (q.includes(` ${w}`)) score += 2; });
+    m.description.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 4).forEach(w => { if (q.includes(` ${w}`)) score += 1; });
+    return { module: m, score };
+  }).filter(s => s.score > 0).sort((a, b) => b.score - a.score);
+  if (scored.length === 0) {
+    const general = modules.find(m => m.code === 'F4' && !m.paused);
+    return general ? [{ module: general, score: 0 }] : [];
+  }
+  return scored.slice(0, limit);
+}
+
+/** Plain-text preview of a Markdown answer. */
+export function plainPreview(md: string, length = 160) {
+  return md.replace(/\[CACHED RESPONSE[^\]]*\]/g, '').replace(/```[\s\S]*?```/g, ' ').replace(/[#*_`>|]+/g, ' ').replace(/-{3,}/g, ' ')
+    .replace(/\s+/g, ' ').trim().slice(0, length);
+}
