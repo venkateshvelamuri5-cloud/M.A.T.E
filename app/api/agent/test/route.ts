@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
   const self = { id: agentId || '__draft__', name: draft.name || slotCode, slot_code: slotCode, keywords: draft.keywords || '' };
   const candidates = [...routable, self];
   let routing: { method: 'slot_code' | 'keyword' | 'none'; slotCode?: string; name?: string; isThisAgent: boolean };
-  const slotMatch = query.match(/[\[\(]?\b([A-F][1-4])\b[\]\)]?/i);
+  const slotMatch = query.match(/[\[\(]?\b([A-F][1-6])\b[\]\)]?/i);
   const slotAgent = slotMatch ? candidates.find(a => a.slot_code?.toUpperCase() === slotMatch[1].toUpperCase()) : null;
   if (slotAgent) {
     routing = { method: 'slot_code', slotCode: slotAgent.slot_code, name: slotAgent.name, isThisAgent: slotAgent.slot_code === slotCode };
