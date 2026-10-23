@@ -6,6 +6,7 @@ import { supabase } from '../../src/supabase-client';
 import { requestIngestion } from '../../src/services/documents/client';
 import { Upload, FileText, Database, Plus, CheckCircle, ArrowLeft, Trash2, TrendingUp, DollarSign, Activity, Users, Lock, LogOut, CheckCircle2, Home, Settings, Shield, AlertCircle, BookOpen, Save, X } from 'lucide-react';
 import UserManagementTab from './UserManagementTab';
+import AnalyticsTab from './AnalyticsTab';
 
 interface KnowledgeFile {
   id: string;
@@ -1356,6 +1357,10 @@ export default function AnalystPortal() {
           {statusMsg}
         </div>
       )}
+
+      <div className="max-w-6xl mx-auto mt-8 relative z-10">
+        <AnalyticsTab />
+      </div>
 
       {/* Slots Category Grid for Analyst Configuration */}
       <div className="max-w-6xl mx-auto bg-card border border-border p-8 rounded-xl shadow-sm mt-8 relative z-10">
