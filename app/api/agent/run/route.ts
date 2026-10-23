@@ -3,6 +3,7 @@ import { supabase } from '../../../../src/supabase-client';
 import { GeminiService } from '../../../../src/services/gemini';
 import { SmtpService } from '../../../../src/services/smtp';
 import { FileProcessor } from '../../../../src/services/fileProcessor';
+import { buildRetrievedContext, classifyDocument, contextBudgetFor, RetrievalFile } from '../../../../src/services/documents/retrieval';
 
 export const dynamic = 'force-dynamic';
 
@@ -182,10 +183,25 @@ export async function POST(req: NextRequest) {
     }
     const files = Array.from(filesMap.values());
 
+    const readyFiles: RetrievalFile[] = [];
     if (files && files.length > 0) {
       for (const file of files) {
             const isKnowledgeBase = file.file_type === 'knowledge_base';
             const isExplicitSelection = selectedFileIds !== undefined;
+
+            // Processed files are searched by section below instead of being downloaded and parsed.
+            if (file.ingest_status === 'ready') {
+              if (file.agent_id && file.agent_id !== agentId) continue;
+              readyFiles.push({
+                id: file.id,
+                name: file.name,
+                token_count: file.token_count,
+                scope: file.agent_id === agentId ? 'agent' : isKnowledgeBase ? 'global' : 'user',
+                classification: classifyDocument(file),
+                preferWhole: isExplicitSelection || file.agent_id === agentId || bypassKeywordMatch,
+              });
+              continue;
+            }
             const nameMatchesKeywords = keywords.length === 0 || keywords.some(kw => 
               file.name.toLowerCase().includes(kw)
             );
@@ -301,6 +317,10 @@ export async function POST(req: NextRequest) {
             }
           }
       }
+
+    if (readyFiles.length > 0) {
+      fileReferenceContext += await buildRetrievedContext(readyFiles, keywords, contextBudgetFor(agent.llm_provider));
+    }
 
     // 5. Ingest profile metadata directly into grounding prompt to personalize output
     const marinerProfilePrompt = `
