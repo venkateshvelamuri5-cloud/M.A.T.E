@@ -167,9 +167,10 @@ export function OfficerProvider({ children }: { children: React.ReactNode }) {
       supabase.from('system_settings').select('value').eq('key', 'user_manual').maybeSingle(),
       supabase.from('user_agent_settings').select('*').eq('user_id', uid)
     ]);
-    setFiles((f || []) as OfficerFile[]);
-    setLogs((l || []) as RunLog[]);
-    setAgents((a || []) as OfficerAgent[]);
+    // A failed reload keeps what is on screen, so an open module page isn't swapped out mid-run.
+    if (f) setFiles(f as OfficerFile[]);
+    if (l) setLogs(l as RunLog[]);
+    if (a?.length) setAgents(a as OfficerAgent[]);
     setCategoryNames(names);
     setManual(m?.value || '');
     const map: Record<string, Record<string, string>> = {};

@@ -8,6 +8,8 @@ import { analystIds, consumeRun, limitMessage, refundRun, userFromRequest } from
 import { buildQueryForAgent, parseRequest } from '../../../dashboard/_lib/modules';
 
 export const dynamic = 'force-dynamic';
+// Large documents and slower models can take more than the default limit.
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   const gemini = new GeminiService();
@@ -133,7 +135,8 @@ export async function POST(req: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(1);
 
-    if (cachedLogs && cachedLogs.length > 0) {
+    // Earlier empty replies were saved as "Completed"; never serve one of those from the cache.
+    if (cachedLogs && cachedLogs.length > 0 && !/^No response generated/.test(cachedLogs[0].email_response || '')) {
       const cachedResponse = `[CACHED RESPONSE - Last 24 Hours]\n\n${cachedLogs[0].email_response}`;
       return NextResponse.json({
         success: true,
@@ -351,6 +354,19 @@ export async function POST(req: NextRequest) {
 
     if (readyFiles.length > 0) {
       fileReferenceContext += await buildRetrievedContext(readyFiles, keywords, contextBudgetFor(agent.llm_provider));
+    }
+
+    // The officer's answers to this agent's form questions, the same as the email route sends.
+    const { data: settings } = await supabase
+      .from('user_agent_settings')
+      .select('answers')
+      .eq('user_id', userId)
+      .eq('agent_id', agentId)
+      .maybeSingle();
+    const answered = Object.entries((settings?.answers || {}) as Record<string, string>).filter(([, a]) => String(a || '').trim());
+    if (answered.length > 0) {
+      const answersContext = answered.map(([q, a]) => `Q: ${q}\nA: ${a}`).join('\n\n');
+      fileReferenceContext = `=== USER MODULE SETTINGS ===\n${answersContext}\n==========================\n\n${fileReferenceContext}`;
     }
 
     // 5. Ingest profile metadata directly into grounding prompt to personalize output

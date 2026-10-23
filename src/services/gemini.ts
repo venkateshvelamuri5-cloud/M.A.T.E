@@ -284,7 +284,10 @@ ${query}
         
         // [Safety Guard] sarvam-105b has a 128K-token context window shared by prompt and output.
         // Trim lower-priority documents to fit instead of dropping all grounding context.
-        const sarvamMaxTokens = Number(process.env.SARVAM_MAX_TOKENS) || 8192;
+        // Thinking and the answer share this limit. With 8,192 and the default thinking level, long agent
+        // instructions used every token on thinking and the answer came back empty (finish_reason "length").
+        const sarvamMaxTokens = Number(process.env.SARVAM_MAX_TOKENS) || 16384;
+        const sarvamEffort = process.env.SARVAM_REASONING_EFFORT || 'low';
         const sarvamContextTokens = 128000;
         const promptOverheadTokens = estimateTokens(activeSystemPrompt) + estimateTokens(buildUserMessage('')) + 1000;
         const contextBudgetTokens = sarvamContextTokens - sarvamMaxTokens - promptOverheadTokens;
@@ -294,45 +297,51 @@ ${query}
           finalUserMessage = buildUserMessage(fitContextToBudget(fullReferenceContext, contextBudgetTokens, keywords));
         }
 
-        const response = await fetch('https://api.sarvam.ai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'api-subscription-key': `${process.env.SARVAM_API_KEY || ''}`
-          },
-          body: JSON.stringify({
-            model: sarvamModel,
-            max_tokens: sarvamMaxTokens,
-            temperature: 0.7,
-            messages: [
-              { role: 'system', content: activeSystemPrompt },
-              { role: 'user', content: finalUserMessage }
-            ]
-          })
-        });
-        if (!response.ok) {
-          const errText = await response.text();
-          throw new Error(`Sarvam AI API error (Status ${response.status}): ${errText}`);
-        }
-        const data = await response.json();
-        if (data.error) {
-          throw new Error(data.error.message || JSON.stringify(data.error));
-        }
-        
-        if (data.usage) {
-          console.log(`[LLM Router] Sarvam usage: prompt=${data.usage.prompt_tokens} completion=${data.usage.completion_tokens} total=${data.usage.total_tokens}`);
-        }
+        // An empty reply is retried once with thinking turned off, so the whole limit goes to the answer.
+        // If that is empty too the run fails (and is refunded) instead of saving an answer that says nothing.
+        let finishReason = '';
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          const response = await fetch('https://api.sarvam.ai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'api-subscription-key': `${process.env.SARVAM_API_KEY || ''}`
+            },
+            body: JSON.stringify({
+              model: sarvamModel,
+              max_tokens: sarvamMaxTokens,
+              reasoning_effort: attempt === 1 ? sarvamEffort : null,
+              temperature: 0.7,
+              messages: [
+                { role: 'system', content: activeSystemPrompt },
+                { role: 'user', content: finalUserMessage }
+              ]
+            })
+          });
+          if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Sarvam AI API error (Status ${response.status}): ${errText}`);
+          }
+          const data = await response.json();
+          if (data.error) {
+            throw new Error(data.error.message || JSON.stringify(data.error));
+          }
 
-        const messageObj = data.choices?.[0]?.message || {};
-        const content = messageObj.content?.trim();
-        const reasoning = messageObj.reasoning_content?.trim();
-        
-        if (!content && !reasoning) {
-          console.warn('[LLM Router] Sarvam AI returned an empty response. Raw payload:', JSON.stringify(data, null, 2));
+          if (data.usage) {
+            console.log(`[LLM Router] Sarvam usage: prompt=${data.usage.prompt_tokens} completion=${data.usage.completion_tokens} total=${data.usage.total_tokens}`);
+          }
+
+          const choice = data.choices?.[0] || {};
+          const messageObj = choice.message || {};
+          const content = (typeof messageObj.content === 'string' ? messageObj.content : '').trim();
+          const reasoning = (messageObj.reasoning_content || messageObj.reasoning || '').trim();
+          finishReason = choice.finish_reason || '';
+
+          // If content is null (because it hit length limit while reasoning), return reasoning
+          if (content || reasoning) return content || reasoning;
+          console.warn(`[LLM Router] Sarvam AI returned an empty response (attempt ${attempt}, finish_reason=${finishReason}). Raw payload:`, JSON.stringify(data).slice(0, 2000));
         }
-        
-        // If content is null (because it hit length limit while reasoning), return reasoning
-        return content || reasoning || 'No response generated from Sarvam AI.';
+        throw new Error(`Sarvam AI returned an empty response twice${finishReason ? ` (finish_reason: ${finishReason})` : ''}.`);
 
       } else {
         // Fallback or explicit 'groq'
