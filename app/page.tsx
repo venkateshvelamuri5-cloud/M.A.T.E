@@ -1,342 +1,258 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { 
-  Anchor, 
-  Mail, 
-  ArrowRight, 
-  ShieldAlert, 
-  ShieldCheck, 
-  ClipboardCheck, 
-  Waves, 
-  GraduationCap, 
-  Wrench, 
-  BookOpen, 
-  CloudSun, 
-  Calculator, 
-  FileText, 
+import {
+  ArrowRight,
+  ShieldCheck,
+  ClipboardCheck,
+  Waves,
+  GraduationCap,
+  BookOpen,
+  CloudSun,
+  Calculator,
+  FileText,
   Droplets,
-  ArrowUpRight,
-  Send,
-  Inbox
 } from 'lucide-react';
+import './aurora.css';
+import { useAurora, useBridgeClock } from '../components/aurora/useAurora';
+
+const SCENES = ['Watch', 'Compose', 'Uplink', 'Agent', 'Reply'];
+
+const ROADMAP = [
+  { icon: BookOpen, title: 'SMS clarification', note: 'In development' },
+  { icon: GraduationCap, title: 'SIRE 2.0 learning', note: 'In development' },
+  { icon: CloudSun, title: 'Weather reports', note: 'In development' },
+  { icon: Calculator, title: 'Payroll calculations', note: 'In development' },
+  { icon: FileText, title: 'Voyage orders', note: 'In development' },
+  { icon: Droplets, title: 'Cargo calculations', note: 'Oil · product · chemical' },
+];
 
 export default function LandingPage() {
-  const [emailInput, setEmailInput] = useState("Hot work in pump room — bilge area, vessel underway.");
-  const [activeTab, setActiveTab] = useState<'risk' | 'audit' | 'drill' | 'training'>('risk');
+  const { canvasRef, stageRef, linkRef, headingRef, handleRef, noWebGL, ready } = useAurora('story');
+  const { utcRef, posRef } = useBridgeClock();
+  const storyRef = useRef<HTMLElement>(null);
+  const stepRefs = useRef<(HTMLElement | null)[]>([]);
+  const [scene, setScene] = useState(0);
+  const [solidHeader, setSolidHeader] = useState(false);
+
+  // Scroll position drives the story timeline (0 to 4) and the scene rail.
+  useEffect(() => {
+    const onScroll = () => {
+      const story = storyRef.current;
+      if (!story) return;
+      const r = story.getBoundingClientRect();
+      const range = Math.max(r.height - window.innerHeight, 1);
+      const p = Math.max(0, Math.min(1, -r.top / range)) * (SCENES.length - 1);
+      handleRef.current?.setProgress(p);
+      setScene(Math.round(p));
+      setSolidHeader(r.bottom < window.innerHeight * 0.6);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => { window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onScroll); };
+  }, [handleRef, ready]);
+
+  const spotlight = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = e.currentTarget, r = el.getBoundingClientRect();
+    el.style.setProperty('--mx', `${e.clientX - r.left}px`);
+    el.style.setProperty('--my', `${e.clientY - r.top}px`);
+  };
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans selection:bg-gold selection:text-deep relative">
-      {/* Header */}
-      <header className="sticky top-0 z-40 backdrop-blur-md bg-background/70 border-b border-border/60">
-        <div className="mx-auto max-w-6xl px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2.5 hover:opacity-90 transition">
-            <img src="/logo.jpeg" alt="M.A.T.E logo" width="36" height="36" className="rounded" />
-            <span className="font-display text-base font-semibold leading-tight text-deep">
-              M.A.T.E
-              <span className="block text-[9px] text-muted-foreground font-medium uppercase tracking-tighter">
-                Maritime Automated Technical Executive
-              </span>
-            </span>
+    <div className="aurora">
+      <header className={`au-top${solidHeader ? ' solid' : ''}`}>
+        <div className="au-wrap">
+          <Link href="/" className="au-brand" aria-label="M.A.T.E home">
+            <img src="/logo.jpeg" alt="" width="34" height="34" />
+            <b>M.A.T.E</b>
           </Link>
-          <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-muted-foreground">
-            <a href="#modules" className="hover:text-foreground transition">Modules</a>
-            <a href="#how" className="hover:text-foreground transition">How it works</a>
-            <a href="#email" className="hover:text-foreground transition">Email access</a>
-            <a href="#roadmap" className="hover:text-foreground transition">Roadmap</a>
+          <nav className="au-nav" aria-label="Sections">
+            <a href="#compose">How it works</a>
+            <a href="#modules">Modules</a>
+            <a href="#roadmap">Roadmap</a>
           </nav>
-          <div className="flex items-center gap-4">
-            <Link href="/login" className="inline-flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-5 py-2 text-sm font-semibold hover:bg-primary/90 transition shadow-sm hover:scale-[1.02] transform duration-150">
-              Sign In
-            </Link>
-          </div>
+          <Link href="/login" className="au-btn au-btn-glass au-btn-sm">Sign in</Link>
         </div>
       </header>
 
-      {/* Hero Section */}
-      <section id="top" className="relative overflow-hidden">
-        <div className="mx-auto max-w-6xl px-6 pt-20 pb-24 text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3.5 py-1.5 text-xs font-medium text-muted-foreground shadow-sm">
-            <span className="text-gold font-bold">⚓</span>
-            Built by senior Masters &amp; Chief Engineers
+      <section className="au-story" id="top" ref={storyRef}>
+        <div className={`au-stage${noWebGL ? ' no-webgl' : ''}`} ref={stageRef}>
+          <canvas ref={canvasRef} aria-hidden="true" />
+          <div className="au-edge" aria-hidden="true" />
+          <div className="au-rail" aria-label="Story scenes">
+            {SCENES.map((s, i) => (
+              <button key={s} type="button" className={i === scene ? 'on' : ''}
+                onClick={() => stepRefs.current[i]?.scrollIntoView({ behavior: 'smooth' })}>
+                {s} <i />
+              </button>
+            ))}
           </div>
-          <h1 className="mt-6 font-display text-5xl md:text-7xl font-semibold leading-[1.05] text-deep max-w-4xl mx-auto tracking-tight">
-            Paperwork for mariners, <br className="hidden md:block"/>
-            <span className="text-gold italic font-display">done in minutes.</span>
-          </h1>
-          <p className="mt-6 text-base md:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Risk assessments, audit closures, drill notes, training minutes etc—expertly generated by AI, backed by training from serving senior officers, and delivered straight to your inbox. Every piece of generated intelligence is fully customised based on your vessel's unique profile provided during registration.
-          </p>
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-            <Link href="/signup" className="inline-flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-6 py-3 text-sm font-medium hover:bg-primary/90 transition shadow-lg shadow-primary/20 hover:scale-[1.02] transform duration-150">
-              Start by sending an email <Mail className="h-4 w-4" />
-            </Link>
-            <a href="#modules" className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-6 py-3 text-sm font-medium hover:bg-secondary transition shadow-sm hover:scale-[1.02] transform duration-150">
-              Explore modules
-            </a>
+          <div className="au-console" aria-hidden="true">
+            <div className="au-wrap">
+              <div className="au-readout">
+                <span>POS <b ref={posRef}>18°54.20′N 072°48.70′E</b></span>
+                <span>HDG <b ref={headingRef}>074°</b></span>
+                <span>SOG <b>12.4 kn</b></span>
+                <span>UTC <b ref={utcRef}>00:00:00</b></span>
+                <span className="live">LINK <b ref={linkRef}>VSAT · idle</b></span>
+              </div>
+            </div>
           </div>
+        </div>
 
-          <div className="mt-16 grid grid-cols-1 md:grid-cols-3 max-w-3xl mx-auto gap-6 text-left border-t border-border/60 pt-12">
-            <div className="border-l-2 border-gold/60 pl-4">
-              <div className="font-display text-2xl text-deep font-bold">&lt; 1 min</div>
-              <div className="text-xs uppercase tracking-wider text-muted-foreground mt-1">Average response time</div>
+        <div className="au-steps">
+          <article className="au-step au-hero" ref={(el) => { stepRefs.current[0] = el; }}>
+            <div className="au-wrap"><div className="copy">
+              <div className="au-eyebrow">Maritime AI · built by senior Masters &amp; Chief Engineers</div>
+              <h1>Paperwork for mariners, <em>done in minutes.</em></h1>
+              <p className="lede">Risk assessments, audit closures, drill notes and training minutes, drafted by an AI agent trained with serving senior officers and fitted to your vessel. You send one email. It sends back the document.</p>
+              <div className="au-cta-row">
+                <Link href="/signup" className="au-btn au-btn-gold">Start by sending an email <ArrowRight className="h-4 w-4" /></Link>
+                <a href="#compose" className="au-btn au-btn-glass">Watch how it works</a>
+              </div>
+              <div className="au-chip-row">
+                <span className="au-chip"><b>&lt; 1 min</b> average reply</span>
+                <span className="au-chip"><b>0</b> apps to install</span>
+                <span className="au-chip"><b>1</b> line of input</span>
+              </div>
+            </div></div>
+          </article>
+
+          <article className="au-step" id="compose" ref={(el) => { stepRefs.current[1] = el; }}>
+            <div className="au-wrap"><div className="au-panel">
+              <div className="au-no">01 · Compose</div>
+              <h2>One line, <em>from the bridge.</em></h2>
+              <p className="au-body">Write to your M.A.T.E mailbox from the ship&apos;s business computer. Describe the job in a sentence, the way you&apos;d say it to the Master.</p>
+              <div className="au-mail">
+                <div className="row"><span>To</span><span>mate@logmark-ai.com</span></div>
+                <div className="row"><span>Subject</span><span>Risk Assessment</span></div>
+                <div className="msg">Hot work in pump room, bilge area, vessel underway.</div>
+              </div>
+            </div></div>
+          </article>
+
+          <article className="au-step right" ref={(el) => { stepRefs.current[2] = el; }}>
+            <div className="au-wrap"><div className="au-panel">
+              <div className="au-no">02 · Uplink</div>
+              <h2>It leaves on the link <em>you already have.</em></h2>
+              <p className="au-body">Your email goes out over the ship&apos;s normal VSAT mail. No app store, no whitelisted website, no firewall ticket to the office.</p>
+              <div className="au-chip-row">
+                <span className="au-chip"><b>Plain text</b> about 2 KB</span>
+                <span className="au-chip"><b>Any</b> mail client</span>
+                <span className="au-chip"><b>Works</b> on thin bandwidth</span>
+              </div>
+            </div></div>
+          </article>
+
+          <article className="au-step" ref={(el) => { stepRefs.current[3] = el; }}>
+            <div className="au-wrap"><div className="au-panel">
+              <div className="au-no">03 · Agent</div>
+              <h2>The agent drafts it <em>like a senior officer.</em></h2>
+              <p className="au-body">M.A.T.E reads your line against the vessel and rank profile you registered, then writes the document the way experienced Masters and Chief Engineers trained it to.</p>
+              <div className="au-chip-row">
+                <span className="au-chip"><b>Vessel</b> profile</span>
+                <span className="au-chip"><b>Rank</b> and role</span>
+                <span className="au-chip"><b>Audit</b>-ready structure</span>
+              </div>
+            </div></div>
+          </article>
+
+          <article className="au-step right" ref={(el) => { stepRefs.current[4] = el; }}>
+            <div className="au-wrap"><div className="au-panel">
+              <div className="au-no">04 · Reply</div>
+              <h2>Back in your inbox <em>before the kettle boils.</em></h2>
+              <p className="au-body">Plain text you can paste straight into your company&apos;s forms.</p>
+              <div className="au-mail">
+                <div className="row"><span>From</span><span className="ok">mate@logmark-ai.com</span></div>
+                <pre>{`RISK ASSESSMENT · M/V PIONEER · C/O
+Hazards: explosive atmosphere, slips, limited escape route
+Controls: gas-free cert, fire watch, bilge drained, rescue line
+Residual risk: LOW, with Master's approval`}</pre>
+              </div>
+            </div></div>
+          </article>
+        </div>
+      </section>
+
+      <section className="au-section" id="modules">
+        <div className="au-wrap">
+          <div className="au-section-head">
+            <div><div className="au-eyebrow">Live modules</div><h2>Hours of paperwork, <em>now minutes.</em></h2></div>
+            <p className="au-intro">Each module turns one line into a complete, vessel-specific document. Active-duty Masters and Chief Engineers keep tuning it so the output holds up to audit.</p>
+          </div>
+          <div className="au-bento">
+            <div className="au-card w4" onPointerMove={spotlight}>
+              <div className="au-ic"><ShieldCheck className="h-5 w-5" /></div>
+              <h3>Risk Assessment</h3>
+              <p>Hazards, controls and residual ratings, ready for the Master&apos;s signature.</p>
+              <div className="au-io"><div><span>IN</span><span>Enclosed space entry, No.3 cargo tank</span></div><div><span>OUT</span><span>Hazards · controls · residual rating</span></div></div>
             </div>
-            <div className="border-l-2 border-gold/60 pl-4">
-              <div className="font-display text-2xl text-deep font-bold">100%</div>
-              <div className="text-xs uppercase tracking-wider text-muted-foreground mt-1">Built for maritime application by serving senior officers</div>
+            <div className="au-card w2 au-stat" onPointerMove={spotlight}>
+              <div className="au-eyebrow">Average reply</div>
+              <div className="au-big">&lt; 1 min</div>
+              <p>From send to a finished document in your inbox.</p>
             </div>
-            <div className="border-l-2 border-gold/60 pl-4">
-              <div className="font-display text-2xl text-deep font-bold">Communicate with AI via Email</div>
-              <div className="text-xs uppercase tracking-wider text-muted-foreground mt-1">No app installation, no firewall issues and no whitelisting of website required</div>
+            <div className="au-card w2" onPointerMove={spotlight}>
+              <div className="au-ic"><ClipboardCheck className="h-5 w-5" /></div>
+              <h3>Audit Closure</h3>
+              <p>Root cause, corrective and preventive action, and the evidence the auditor will ask for.</p>
+              <div className="au-io"><div><span>IN</span><span>PSC: emergency fire pump failed to prime</span></div></div>
+            </div>
+            <div className="au-card w2" onPointerMove={spotlight}>
+              <div className="au-ic"><Waves className="h-5 w-5" /></div>
+              <h3>Drill Notes</h3>
+              <p>Scenario, objectives, timings, observations and lessons learned.</p>
+              <div className="au-io"><div><span>IN</span><span>Abandon ship drill, port lifeboat lowered</span></div></div>
+            </div>
+            <div className="au-card w2" onPointerMove={spotlight}>
+              <div className="au-ic"><GraduationCap className="h-5 w-5" /></div>
+              <h3>Training Minutes</h3>
+              <p>Structured minutes to brief crew on any subject, signable as is.</p>
+              <div className="au-io"><div><span>IN</span><span>ECDIS safety contour for new 3/O</span></div></div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Live Modules Section */}
-      <section id="modules" className="border-t border-border/60 bg-card/40">
-        <div className="mx-auto max-w-6xl px-6 py-24">
-          <div className="max-w-2xl">
-            <div className="text-xs uppercase tracking-[0.2em] text-gold font-bold">Live Modules</div>
-            <h2 className="mt-3 font-display text-4xl md:text-5xl font-semibold text-deep">
-              Paperwork that used to take hours, now takes minutes
-            </h2>
-            <p className="mt-4 text-muted-foreground">
-              Every module seamlessly converts a single line of input into a comprehensive, vessel-specific output in full compliance with the highest maritime standards.
-            </p>
-            <p className="mt-4 text-muted-foreground">
-              The platform's underlying intelligence is continuously fine-tuned by experienced, active-duty Masters and Chief Engineers.
-            </p>
-            <p className="mt-4 text-muted-foreground font-semibold text-deep/80">
-              This rigorous oversight ensures the highest caliber of documentation, engineered to withstand the toughest audit scrutiny.
-            </p>
+      <section className="au-section" id="roadmap">
+        <div className="au-wrap">
+          <div className="au-section-head">
+            <div><div className="au-eyebrow">Passage plan</div><h2>Next waypoints <em>on the route.</em></h2></div>
+            <p className="au-intro">Modules in active development. Registered users get them as they ship.</p>
           </div>
-
-          <div className="mt-12 grid md:grid-cols-2 gap-5">
-            {/* Risk Assessment Card */}
-            <div className="group rounded-2xl border border-border bg-background p-7 hover:border-gold/60 hover:shadow-sm transition duration-300">
-              <div className="flex items-center justify-center h-12 w-12 rounded-xl bg-primary text-primary-foreground group-hover:bg-gold group-hover:text-deep transition duration-300">
-                <ShieldCheck className="h-6 w-6" />
-              </div>
-              <h3 className="mt-5 font-display text-2xl font-semibold text-deep">Risk Assessment</h3>
-              <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-                Submit a single-line item. Receive a detailed, audit-ready risk assessment with hazards, controls and residual ratings.
-              </p>
-            </div>
-
-            {/* Audit Closure Card */}
-            <div className="group rounded-2xl border border-border bg-background p-7 hover:border-gold/60 hover:shadow-sm transition duration-300">
-              <div className="flex items-center justify-center h-12 w-12 rounded-xl bg-primary text-primary-foreground group-hover:bg-gold group-hover:text-deep transition duration-300">
-                <ClipboardCheck className="h-6 w-6" />
-              </div>
-              <h3 className="mt-5 font-display text-2xl font-semibold text-deep">Audit Closure</h3>
-              <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-                One line in — a thorough audit closure report out. Root causes, corrective actions, evidence prompts, all formatted.
-              </p>
-            </div>
-
-            {/* Drill Notes Card */}
-            <div className="group rounded-2xl border border-border bg-background p-7 hover:border-gold/60 hover:shadow-sm transition duration-300">
-              <div className="flex items-center justify-center h-12 w-12 rounded-xl bg-primary text-primary-foreground group-hover:bg-gold group-hover:text-deep transition duration-300">
-                <Waves className="h-6 w-6" />
-              </div>
-              <h3 className="mt-5 font-display text-2xl font-semibold text-deep">Drill Notes</h3>
-              <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-                Minimal input, complete drill minutes. Scenario, objectives, timing, observations, lessons learned — ready to file.
-              </p>
-            </div>
-
-            {/* Training Minutes Card */}
-            <div className="group rounded-2xl border border-border bg-background p-7 hover:border-gold/60 hover:shadow-sm transition duration-300">
-              <div className="flex items-center justify-center h-12 w-12 rounded-xl bg-primary text-primary-foreground group-hover:bg-gold group-hover:text-deep transition duration-300">
-                <GraduationCap className="h-6 w-6" />
-              </div>
-              <h3 className="mt-5 font-display text-2xl font-semibold text-deep">Training Minutes</h3>
-              <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-                Generate the training minutes an officer needs to brief crew on any subject — structured, vessel-appropriate, signable.
-              </p>
+          <div className="au-plan">
+            <div className="au-route" aria-hidden="true" />
+            <div className="au-wps">
+              {ROADMAP.map(({ icon: Icon, title, note }) => (
+                <div className="au-wp" key={title}>
+                  <div className="mark"><Icon className="h-[18px] w-[18px]" /></div>
+                  <h3>{title}</h3>
+                  <p>{note}</p>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </section>
 
-      {/* How it Works / Email Gateway Section */}
-      <section id="email" className="border-t border-border/60 bg-background">
-        <div className="mx-auto max-w-6xl px-6 py-24 grid lg:grid-cols-2 gap-12 items-center">
-          <div>
-            <div className="text-xs uppercase tracking-[0.2em] text-gold font-bold">Built for ships, not for offices</div>
-            <h2 className="mt-3 font-display text-4xl md:text-5xl font-semibold text-deep">
-              No app. No login. Just email.
-            </h2>
-            <p className="mt-5 text-muted-foreground leading-relaxed">
-              We understand seafarers' realities — patchy VSAT bandwidth, firewalled business computers, no Play Store access. Our proprietary email gateway lets you interact with the AI using the one channel that always works onboard.
-            </p>
-            <ol className="mt-8 space-y-5">
-              <li className="flex gap-4">
-                <div className="shrink-0 h-9 w-9 rounded-full bg-deep text-primary-foreground flex items-center justify-center font-display font-semibold">
-                  1
-                </div>
-                <div>
-                  <div className="font-semibold text-deep">Compose an email</div>
-                  <div className="text-sm text-muted-foreground mt-1">
-                    Address it to your dedicated M.A.T.E mailbox with one line describing what you need.
-                  </div>
-                </div>
-              </li>
-              <li className="flex gap-4">
-                <div className="shrink-0 h-9 w-9 rounded-full bg-deep text-primary-foreground flex items-center justify-center font-display font-semibold">
-                  2
-                </div>
-                <div>
-                  <div className="font-semibold text-deep">AI drafts user/vessel specific response</div>
-                  <div className="text-sm text-muted-foreground mt-1">
-                    AI generates the requested information looking into user/vessel specific information provided at the time of registration
-                  </div>
-                </div>
-              </li>
-              <li className="flex gap-4">
-                <div className="shrink-0 h-9 w-9 rounded-full bg-deep text-primary-foreground flex items-center justify-center font-display font-semibold">
-                  3
-                </div>
-                <div>
-                  <div className="font-semibold text-deep">Reply lands in your inbox</div>
-                  <div className="text-sm text-muted-foreground mt-1">
-                    An unformatted, plain-text email arrives directly in your inbox, allowing you to easily copy the content into your company-specific apps or forms.
-                  </div>
-                </div>
-              </li>
-            </ol>
-          </div>
-
-          {/* Interactive CSS Email gateway mockup */}
-          <div className="relative rounded-3xl border border-border bg-gradient-to-br from-secondary to-card p-6 md:p-8 overflow-hidden shadow-md">
-            <div className="bg-white rounded-xl border border-border shadow-sm overflow-hidden flex flex-col font-mono text-xs text-muted-foreground">
-              <div className="bg-[#FAF9F6] border-b border-border px-4 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-full bg-[#FE3F21] inline-block" />
-                  <span className="w-3 h-3 rounded-full bg-[#FE7B02] inline-block" />
-                  <span className="w-3 h-3 rounded-full bg-[#F858BC] inline-block" />
-                </div>
-                <span className="text-[10px] text-zinc-400">maritime-gateway@mate.ai</span>
-              </div>
-              <div className="p-4 space-y-3.5">
-                <div>
-                  <span className="text-gold font-bold">To:</span> <span className="text-deep font-bold">mate@logmark-ai.com</span>
-                </div>
-                <div className="border-b border-border/60 pb-2">
-                  <span className="text-gold font-bold">Subject:</span> <span className="text-deep font-bold">Risk Assessment</span>
-                </div>
-                <div>
-                  <div className="text-deep font-semibold bg-background p-3 rounded-lg border border-border/80">
-                    Hot work in pump room — bilge area, vessel underway.
-                  </div>
-                </div>
-              </div>
-              <div className="bg-primary/5 border-t border-border px-4 py-3.5 flex items-center justify-between text-[11px] text-deep/75">
-                <div className="flex items-center gap-2">
-                  <Inbox className="w-4 h-4 text-gold" />
-                  <span>Interactive Mail Gateway</span>
-                </div>
-                <Link href="/signup" className="text-[10px] font-bold text-primary hover:text-gold uppercase tracking-wider flex items-center gap-1">
-                  Try Simulator <ArrowUpRight className="w-3 h-3" />
-                </Link>
-              </div>
-            </div>
-
-            {/* Simulated Response */}
-            <div className="mt-4 bg-white rounded-xl border border-border p-4 shadow-sm font-mono text-[10px] text-zinc-700 leading-relaxed max-h-40 overflow-y-auto">
-              <div className="text-green-600 font-bold mb-1 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block animate-ping" />
-                From: mate@logmark-ai.com
-              </div>
-              <pre className="whitespace-pre-line text-zinc-600 mt-2 font-mono">
-                {`Vessel: M/V PIONEER\nRank: Chief Mate\n\n[RISK ASSESSMENT SHEET]\nActivity: Hot work in pump room — bilge area, vessel underway.\n\nHazards: Explosive atmospheres, slips/falls, limited evacuation path.\nControls: Gas-free checks, fire watch, bilge drainage, emergency rescue line ready.\nResidual Rating: Low (Acceptable with Master approval).`}
-              </pre>
-            </div>
-          </div>
+      <section className="au-section au-cta">
+        <div className="au-wrap">
+          <div className="au-eyebrow">Early access</div>
+          <h2>Get your <em>watch back.</em></h2>
+          <p>Join the Masters, Chief Engineers and deck officers already turning hours of paperwork into minutes from the ship&apos;s inbox.</p>
+          <div className="au-cta-row"><Link href="/signup" className="au-btn au-btn-gold">Request early access <ArrowRight className="h-4 w-4" /></Link></div>
         </div>
       </section>
 
-      {/* Roadmap Section */}
-      <section id="roadmap" className="border-t border-border/60 bg-deep text-primary-foreground">
-        <div className="mx-auto max-w-6xl px-6 py-24">
-          <div className="flex items-end justify-between flex-wrap gap-6 border-b border-primary-foreground/15 pb-8">
-            <div className="max-w-xl">
-              <div className="text-xs uppercase tracking-[0.2em] text-gold font-bold">Under construction</div>
-              <h2 className="mt-3 font-display text-4xl md:text-5xl font-semibold text-white">
-                More modules, shipping soon.
-              </h2>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-primary-foreground/75 bg-primary-foreground/5 border border-primary-foreground/10 px-3.5 py-1.5 rounded-full">
-              <Wrench className="h-4 w-4 text-gold animate-spin" style={{ animationDuration: '3s' }} />
-              In active development
-            </div>
-          </div>
-
-          <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Module 1 */}
-            <div className="flex items-center gap-3 rounded-xl border border-primary-foreground/10 bg-primary-foreground/[0.03] px-5 py-4 hover:bg-primary-foreground/[0.06] transition duration-200">
-              <BookOpen className="h-5 w-5 text-gold shrink-0" />
-              <span className="text-sm font-medium">SMS Clarification (AI)</span>
-            </div>
-            {/* Module 2 */}
-            <div className="flex items-center gap-3 rounded-xl border border-primary-foreground/10 bg-primary-foreground/[0.03] px-5 py-4 hover:bg-primary-foreground/[0.06] transition duration-200">
-              <GraduationCap className="h-5 w-5 text-gold shrink-0" />
-              <span className="text-sm font-medium">SIRE 2.0 Learning &amp; Training</span>
-            </div>
-            {/* Module 3 */}
-            <div className="flex items-center gap-3 rounded-xl border border-primary-foreground/10 bg-primary-foreground/[0.03] px-5 py-4 hover:bg-primary-foreground/[0.06] transition duration-200">
-              <CloudSun className="h-5 w-5 text-gold shrink-0" />
-              <span className="text-sm font-medium">Weather Reports</span>
-            </div>
-            {/* Module 4 */}
-            <div className="flex items-center gap-3 rounded-xl border border-primary-foreground/10 bg-primary-foreground/[0.03] px-5 py-4 hover:bg-primary-foreground/[0.06] transition duration-200">
-              <Calculator className="h-5 w-5 text-gold shrink-0" />
-              <span className="text-sm font-medium">Payroll Calculations</span>
-            </div>
-            {/* Module 5 */}
-            <div className="flex items-center gap-3 rounded-xl border border-primary-foreground/10 bg-primary-foreground/[0.03] px-5 py-4 hover:bg-primary-foreground/[0.06] transition duration-200">
-              <FileText className="h-5 w-5 text-gold shrink-0" />
-              <span className="text-sm font-medium">Voyage Orders, Simplified</span>
-            </div>
-            {/* Module 6 */}
-            <div className="flex items-center gap-3 rounded-xl border border-primary-foreground/10 bg-primary-foreground/[0.03] px-5 py-4 hover:bg-primary-foreground/[0.06] transition duration-200">
-              <Droplets className="h-5 w-5 text-gold shrink-0" />
-              <span className="text-sm font-medium">Cargo Calculations — Oil / Product / Chemical</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Call to Action Section */}
-      <section className="border-t border-border/60 bg-background relative overflow-hidden">
-        <div className="mx-auto max-w-4xl px-6 py-24 text-center relative z-10">
-          <h2 className="font-display text-4xl md:text-5xl font-semibold text-deep">Get your watch back.</h2>
-          <p className="mt-4 text-muted-foreground max-w-xl mx-auto leading-relaxed">
-            Join Masters, Chief Engineers and deck officers already cutting hours of paperwork into minutes — all from their ship inbox.
-          </p>
-          <div className="mt-8 flex justify-center">
-            <Link href="/signup" className="inline-flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-8 py-4 text-sm font-medium hover:bg-primary/90 transition shadow-lg shadow-primary/20 hover:scale-[1.02] transform duration-150">
-              Request early access <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-        </div>
-        {/* Subtle background decoration */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-gold/5 rounded-full blur-3xl pointer-events-none" />
-      </section>
-
-      {/* Footer */}
-      <footer className="border-t border-border/60 bg-[#FCFBF8]">
-        <div className="mx-auto max-w-6xl px-6 py-8 flex items-center justify-between flex-wrap gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <img src="/logo.jpeg" alt="M.A.T.E logo" width="24" height="24" className="rounded" />
-            <span>© 2026 M.A.T.E. Crewed by sailors, powered by AI.</span>
-          </div>
-          <div className="flex gap-6">
-            <a href="#modules" className="hover:text-foreground transition">Modules</a>
-            <a href="#email" className="hover:text-foreground transition">Email Access</a>
-            <a href="mailto:mate@logmark-ai.com" className="hover:text-foreground transition">Contact</a>
-          </div>
+      <footer className="au-footer">
+        <div className="au-wrap">
+          <span>© 2026 M.A.T.E. Crewed by sailors, powered by AI.</span>
+          <nav aria-label="Footer">
+            <a href="#modules">Modules</a>
+            <a href="#compose">How it works</a>
+            <a href="mailto:mate@logmark-ai.com">mate@logmark-ai.com</a>
+          </nav>
         </div>
       </footer>
     </div>
