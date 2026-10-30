@@ -37,7 +37,9 @@ const SCOPE_WEIGHT: Record<RetrievalFile['scope'], number> = { agent: 1.5, globa
 export function contextBudgetFor(llmProvider: string): number {
   const configured = Number(process.env.DOC_CONTEXT_BUDGET_TOKENS);
   if (configured > 0) return configured;
-  return (llmProvider || 'groq').toLowerCase() === 'groq' ? 20000 : 60000;
+  const provider = (llmProvider || 'groq').toLowerCase();
+  // Sarvam's sarvam-105b reads long prompts slowly: 60K tokens of sections took answers past two minutes.
+  return provider === 'groq' || provider === 'sarvam' ? 20000 : 60000;
 }
 
 async function fetchWholeFile(fileId: string): Promise<ChunkRow[]> {
