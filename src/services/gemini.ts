@@ -290,7 +290,10 @@ ${query}
         const sarvamEffort = process.env.SARVAM_REASONING_EFFORT || 'low';
         const sarvamContextTokens = 128000;
         const promptOverheadTokens = estimateTokens(activeSystemPrompt) + estimateTokens(buildUserMessage('')) + 1000;
-        const contextBudgetTokens = sarvamContextTokens - sarvamMaxTokens - promptOverheadTokens;
+        // The window fits ~100K tokens of context, but response time grows with prompt length, so grounding
+        // is held to a smaller budget (SARVAM_CONTEXT_BUDGET_TOKENS) to keep answers near the old 20-30s.
+        const sarvamContextBudget = Number(process.env.SARVAM_CONTEXT_BUDGET_TOKENS) || 24000;
+        const contextBudgetTokens = Math.min(sarvamContextBudget, sarvamContextTokens - sarvamMaxTokens - promptOverheadTokens);
         let finalUserMessage = userMessage;
         if (estimateTokens(fullReferenceContext) > contextBudgetTokens) {
           console.warn(`[Safety Guard] Grounding context (~${estimateTokens(fullReferenceContext)} tokens) exceeds Sarvam budget (${contextBudgetTokens} tokens). Trimming...`);
@@ -301,6 +304,7 @@ ${query}
         // If that is empty too the run fails (and is refunded) instead of saving an answer that says nothing.
         let finishReason = '';
         for (let attempt = 1; attempt <= 2; attempt++) {
+          const startedAt = Date.now();
           const response = await fetch('https://api.sarvam.ai/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -328,7 +332,7 @@ ${query}
           }
 
           if (data.usage) {
-            console.log(`[LLM Router] Sarvam usage: prompt=${data.usage.prompt_tokens} completion=${data.usage.completion_tokens} total=${data.usage.total_tokens}`);
+            console.log(`[LLM Router] Sarvam usage: prompt=${data.usage.prompt_tokens} completion=${data.usage.completion_tokens} total=${data.usage.total_tokens} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s (attempt ${attempt})`);
           }
 
           const choice = data.choices?.[0] || {};
