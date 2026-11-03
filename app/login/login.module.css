@@ -1,0 +1,98 @@
+/* Lightweight login: no web fonts, images, animation or blur, so it loads fast on ship VSAT. */
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px max(16px, env(safe-area-inset-right, 0px)) 24px max(16px, env(safe-area-inset-left, 0px));
+  background: #0b1424;
+  color: #eef2f7;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.home {
+  position: absolute;
+  top: 20px;
+  left: max(16px, env(safe-area-inset-left, 0px));
+  color: #9aa6b8;
+  font-size: 14px;
+  text-decoration: none;
+}
+.home:hover { color: #eef2f7; }
+.card {
+  width: 100%;
+  max-width: 400px;
+  padding: 32px 28px;
+  border-radius: 16px;
+  background: #121e33;
+  border: 1px solid #22314a;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+}
+.mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: #e3b862;
+  color: #0b1424;
+}
+.title {
+  margin: 24px 0 0;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.sub {
+  margin: 8px 0 0;
+  color: #9aa6b8;
+  font-size: 15px;
+}
+.status {
+  margin-top: 20px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  border: 1px solid;
+}
+.err { color: #ffb3a8; border-color: #6b2f2a; background: #2a1517; }
+.ok { color: #8ff0d4; border-color: #1f5a4b; background: #0f2a26; }
+.google {
+  margin-top: 24px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 13px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #121a28;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.google:hover { background: #eef1f5; }
+.google:disabled { opacity: .65; cursor: progress; }
+.google:focus-visible, .home:focus-visible, .switch a:focus-visible { outline: 2px solid #e3b862; outline-offset: 3px; }
+.switch {
+  margin: 24px 0 0;
+  padding-top: 20px;
+  border-top: 1px solid #22314a;
+  text-align: center;
+  font-size: 14px;
+  color: #9aa6b8;
+}
+.switch a { color: #e3b862; font-weight: 600; text-decoration: none; }
+.switch a:hover { text-decoration: underline; }
+.foot { margin-top: 20px; font-size: 12.5px; color: #6f7c90; text-align: center; }
