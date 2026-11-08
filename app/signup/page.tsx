@@ -6,6 +6,7 @@ import { supabase } from '../../src/supabase-client';
 import { ArrowLeft, UserPlus } from 'lucide-react';
 import '../aurora.css';
 import { useAurora } from '../../components/aurora/useAurora';
+import { RANK_LABELS } from '../../src/crew/ranks';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -167,7 +168,10 @@ export default function SignupPage() {
                 </div>
                 <div className="au-field">
                   <label htmlFor="rank">Rank</label>
-                  <input id="rank" type="text" required value={rankInput} onChange={e => setRankInput(e.target.value)} placeholder="Chief Mate" />
+                  <select id="rank" required value={rankInput} onChange={e => setRankInput(e.target.value)}>
+                    <option value="" disabled>Choose your rank</option>
+                    {RANK_LABELS.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
                 </div>
               </div>
             </fieldset>

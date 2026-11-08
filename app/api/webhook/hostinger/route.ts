@@ -7,6 +7,10 @@ import { FileProcessor } from '../../../../src/services/fileProcessor';
 import { FormFillerService } from '../../../../src/services/formFiller';
 import { buildRetrievedContext, classifyDocument, contextBudgetFor, RetrievalFile } from '../../../../src/services/documents/retrieval';
 import { analystIds, consumeRun, limitMessage } from '../../../../src/services/limits';
+import { CrewSender, isOwnAddress, markTestPassed, resolveCrewSender } from '../../../../src/crew/vessels';
+import { sendNotLinked, sendTestReply } from '../../../../src/crew/emails';
+import { rankFromLabel } from '../../../../src/crew/ranks';
+import { siteOrigin } from '../../../../src/crew/origin';
 
 /**
  * POST handler for Hostinger Webhook
@@ -22,6 +26,9 @@ export async function POST(req: NextRequest) {
   let bypassKeywordMatch = false;
   let subject = 'M.A.T.E Maritime Inquiry';
   let from = '';
+  // Where answers go. Normally the sender; for crew mail, the Master's address, whose rule forwards it on.
+  let replyTo = '';
+  let crew: CrewSender | null = null;
   let limitCount = 0;
   let limitMax = 10;
   let webhookId: string | null = null;
@@ -72,8 +79,15 @@ export async function POST(req: NextRequest) {
 
     subject = emailData.subject || emailData.title || 'M.A.T.E Maritime Inquiry';
     bodyText = emailData.plainBody || emailData.bodyText || emailData.text || emailData.body || emailData.htmlBody || emailData.html || emailData.content;
-    const promptQuery = emailData.subject || emailData.promptQuery || emailData.query || emailData.ask;
+    let promptQuery = emailData.subject || emailData.promptQuery || emailData.query || emailData.ask;
     const requestDocType = emailData.requestDocType || emailData.docType || 'pdf'; // Default to pdf responses
+
+    replyTo = from;
+
+    // Never answer M.A.T.E's own mail (a Master's rule without its exception would otherwise loop).
+    if (from && isOwnAddress(from)) {
+      return NextResponse.json({ success: true, message: 'Ignored mail from M.A.T.E itself' });
+    }
 
     if (!from || !bodyText) {
       console.warn(`Validation failed: Missing from (${from}) or bodyText (${bodyText ? 'Present' : 'Missing'})`);
@@ -131,7 +145,7 @@ export async function POST(req: NextRequest) {
         `;
 
         await smtp.sendMail({
-          to: from,
+          to: replyTo,
           subject: `Re: ${subject || 'General Inquiry Received'}`,
           text: `Hello,\n\nThank you for reaching out to us at hello@logmark-ai.com. We'll look into it shortly.\n\nIf you need an automated AI technical assessment, please resend your query directly to mate@logmark-ai.com.\n\nBest regards,\nM.A.T.E Support Team`,
           html: redirectHtml
@@ -140,6 +154,28 @@ export async function POST(req: NextRequest) {
         console.error('Failed to send redirection email:', (mailErr as Error).message);
       }
       return NextResponse.json({ success: true, message: 'Redirect auto-reply sent' });
+    }
+
+    // Crew mail forwarded by a Master's Outlook rule: "A1 // MATE-CE" from a ship's Master address
+    // (or, when the rule redirects, from one of its onboard mailboxes). Answers go back to the
+    // Master's address with the code kept in the subject, and the Master's rule forwards them on.
+    try {
+      crew = await resolveCrewSender(from, subject);
+    } catch (crewErr) {
+      console.warn('Crew routing lookup failed, treating as a normal email:', (crewErr as Error).message);
+    }
+    if (crew) {
+      replyTo = crew.vessel.master_email;
+      promptQuery = crew.cleanSubject || promptQuery;
+      if (crew.isTest) {
+        await markTestPassed(crew.vessel.id, crew.rank.code);
+        await sendTestReply(crew.vessel, crew.rank, subject);
+        return NextResponse.json({ success: true, message: `Setup test passed for ${crew.rank.code}` });
+      }
+      if (!crew.member) {
+        await sendNotLinked(crew.vessel, crew.rank, subject, siteOrigin(req));
+        return NextResponse.json({ success: false, message: `No officer linked as ${crew.rank.code} on this vessel` });
+      }
     }
 
     if (subject.toLowerCase().includes('help')) {
@@ -200,7 +236,7 @@ export async function POST(req: NextRequest) {
         `;
 
         await smtp.sendMail({
-          to: from,
+          to: replyTo,
           subject: `Re: ${subject} (M.A.T.E User Guide)`,
           text: `Hello!\n\nHere is how M.A.T.E (Maritime Automated Technical Executive) works...\n\n(Please open this email in an HTML-compatible client to view the complete guide.)\n\nBest regards,\nM.A.T.E Support Team`,
           html: helpHtml
@@ -237,10 +273,16 @@ export async function POST(req: NextRequest) {
       const { data: dbProfiles, error: profileErr } = await supabase
         .from('profiles')
         .select('id, subscription_plan, email, full_name, rank, company_name, vessel_name, vessel_type, operator_name, grt, has_pump_room, pump_system_type, has_bow_thruster, carries_chemical_cargo, has_egcs, egcs_type, operates_us_waters, operates_aus_nz_waters, operates_eu_waters, operates_chinese_waters, role')
-          .eq('vessel_email', from)
-        .limit(1);
+          .eq(crew?.member ? 'id' : 'vessel_email', crew?.member ? crew.member.user_id : from)
+        .limit(5);
 
-      profile = dbProfiles && dbProfiles.length > 0 ? dbProfiles[0] : null;
+      // Several officers may have entered the same ship address. Without a rank code, it's the Master's.
+      profile = dbProfiles && dbProfiles.length > 0
+        ? dbProfiles.find(p => rankFromLabel(p.rank)?.code === 'MS') || dbProfiles[0]
+        : null;
+      if (dbProfiles && dbProfiles.length > 1) {
+        console.warn(`${dbProfiles.length} profiles share the interaction email ${from}; answering as ${profile?.id}.`);
+      }
 
       if (profileErr) {
         console.warn('Supabase profile query encountered error:', profileErr.message);
@@ -250,7 +292,7 @@ export async function POST(req: NextRequest) {
         console.log(`User ${from} is disabled. Sending access suspension auto-reply...`);
         try {
           await smtp.sendMail({
-            to: from,
+            to: replyTo,
             subject: `Re: ${subject || 'M.A.T.E Account Suspended'}`,
             text: `Hello,\n\nYour M.A.T.E workspace access has been disabled by the system administrator.\n\nIf you believe this is an error or wish to restore access, please contact us at hello@logmark-ai.com.\n\nThank you,\nM.A.T.E Team`
           });
@@ -263,7 +305,7 @@ export async function POST(req: NextRequest) {
       if (!profile) {
         console.log(`User profile for ${from} not found. Sending sign up instruction email...`);
         await smtp.sendMail({
-          to: from,
+          to: replyTo,
           subject: `Re: ${subject || 'M.A.T.E Workspace Invitation'}`,
           text: `Hello,\n\nYour email address (${from}) is not registered with M.A.T.E. Please sign up at your landing page first to initialize your workspace.\n\nThank you,\nM.A.T.E Team`
         });
@@ -325,7 +367,23 @@ export async function POST(req: NextRequest) {
     }
 
     if (limitCount >= limitMax) {
-      return NextResponse.json({ error: limitMessage(limitCount, limitMax) }, { status: 403 });
+      // Tell the officer by email too: they may only have the ship's mail.
+      const message = limitMessage(limitCount, limitMax, profile?.subscription_plan);
+      try {
+        await smtp.sendMail({
+          to: replyTo,
+          subject: `Re: ${subject}`,
+          text: `Hello,\n\nYour email reached M.A.T.E but was not answered. ${message}\n\nThank you,\nM.A.T.E Team`
+        });
+      } catch (mailErr) {
+        console.error('Failed to send limit email:', (mailErr as Error).message);
+      }
+      if (webhookId) {
+        await supabase.from('interactions_log')
+          .update({ status: 'Failed', error_message: message })
+          .eq('webhook_id', webhookId);
+      }
+      return NextResponse.json({ error: message }, { status: 403 });
     }
 
     // Check if the user has already sent an email with the exact same content and received a response.
@@ -352,7 +410,7 @@ export async function POST(req: NextRequest) {
           
           // Send cached response
           const mailResponse = await smtp.sendMail({
-            to: from,
+            to: replyTo,
             subject: `Re: ${subject}`,
             text: `Hello,\n\nHere is the requested information:\n\n${duplicateLog.email_response}\n\nThank you for using M.A.T.E.`,
             html: formattedHtml
@@ -929,7 +987,8 @@ Mariner Profile:
     // Build professional addressed email body
     const senderRank = profile?.rank || 'Officer';
     const senderName = profile?.full_name || from;
-    const vesselName = profile?.vessel_name ? `MV ${profile.vessel_name}` : 'your vessel';
+    const vesselName = profile?.vessel_name ? `MV ${profile.vessel_name}`
+      : crew?.vessel.name ? `MV ${crew.vessel.name}` : 'your vessel';
     const queryRef = subject ? `your request: "${subject}"` : 'your maritime inquiry';
 
     const plainTextBody = `Dear ${senderRank} ${senderName},\n\nThank you for your query via M.A.T.E. Please find below the generated response to ${queryRef}.\n\n---\n\n${processedResult}\n\n---\n\nThis response has been generated and tailored specifically for ${vesselName}. Please review all safety-critical parameters against your vessel's SMS and statutory requirements before execution.\n\nShould you require any clarification or a revised assessment, please do not hesitate to re-submit your query.\n\nBest regards,\nM.A.T.E — Maritime Automated Technical Executive\nMerchant Navy Automation Systems`;
@@ -943,11 +1002,13 @@ Mariner Profile:
 
     // 6. Send Outbound SMTP Email response back
     const mailResponse = await smtp.sendMail({
-      to: from,
+      to: replyTo,
       subject: `Re: ${subject}`,
       text: plainTextBody,
       html: formattedHtml,
-      attachments: emailAttachments
+      attachments: emailAttachments,
+      // Crew answers also go to the officer's own Gmail, for when they're ashore or in port.
+      bcc: crew && profile?.email && profile.email.toLowerCase() !== replyTo ? profile.email : undefined
     });
 
     // 7. Increment interaction usage limits counter & log transaction with email requests/responses
@@ -1058,10 +1119,10 @@ Mariner Profile:
     }
 
     // Fail-safe: Email the user apologizing for the technical downtime so they aren't left waiting!
-    if (from) {
+    if (replyTo) {
       try {
         await smtp.sendMail({
-          to: from,
+          to: replyTo,
           subject: `Re: ${subject || 'Inquiry Service Notice'}`,
           text: `Hello,\n\nWe received your inquiry regarding "${subject || 'your request'}".\n\nOur validation engine is currently experiencing temporary technical difficulties. Our system administrators have been notified, and we will process and resolve your query as soon as services are restored.\n\nWe apologize for the delay.\n\nThank you,\nM.A.T.E Team`
         });

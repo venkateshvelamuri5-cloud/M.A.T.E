@@ -8,6 +8,8 @@ export interface EmailAttachment {
 
 export interface SendMailOptions {
   to: string;
+  /** A hidden copy, for example the officer's own Gmail when the answer goes to the ship. */
+  bcc?: string;
   subject: string;
   text: string;
   html?: string;
@@ -49,7 +51,7 @@ export class SmtpService {
     if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
       console.log('--- SIMULATED SMTP EMAIL ---');
       console.log(`From: ${fromAddress}`);
-      console.log(`To: ${options.to}`);
+      console.log(`To: ${options.to}${options.bcc ? ` (bcc ${options.bcc})` : ''}`);
       console.log(`Subject: ${options.subject}`);
       console.log(`Content: ${options.text.substring(0, 100)}...`);
       console.log(`Attachments: ${options.attachments?.map(a => `${a.filename} (${a.content.length} bytes)`).join(', ') || 'None'}`);
@@ -61,6 +63,7 @@ export class SmtpService {
       const info = await this.transporter.sendMail({
         from: `"Agentic Assistant" <${fromAddress}>`,
         to: options.to,
+        bcc: options.bcc,
         subject: options.subject,
         text: options.text,
         html: options.html || `<p>${options.text.replace(/\n/g, '<br>')}</p>`,
