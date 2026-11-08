@@ -10,8 +10,10 @@ const SIGN_OFF = '\n\nBest regards,\nM.A.T.E Team';
 
 export async function sendApprovalRequest(opts: {
   vessel: Vessel; rank: Rank; officerName: string; officerEmail: string; approvalToken: string; origin: string;
+  /** False when the Master has no M.A.T.E account yet: the email then invites them to sign up. */
+  masterOnMate?: boolean;
 }) {
-  const { vessel, rank, officerName, officerEmail, approvalToken, origin } = opts;
+  const { vessel, rank, officerName, officerEmail, approvalToken, origin, masterOnMate = true } = opts;
   const ship = vesselLabel(vessel);
   const approveUrl = `${origin}/crew/approve?token=${approvalToken}`;
   const setupUrl = `${origin}/ship-setup/${vessel.setup_token}`;
@@ -36,13 +38,63 @@ export async function sendApprovalRequest(opts: {
   }
   lines.push(
     `Officers' questions and answers pass through this mailbox. Each officer uses their own M.A.T.E account and run limit.`,
-    'If you did not expect this email, ignore it and nothing will change.'
+    ''
   );
+  if (!isMaster && !masterOnMate) {
+    lines.push(
+      'Captain, M.A.T.E can draft your own paperwork too: risk assessments, audit closures, drill records and more,',
+      `written for ${ship}. Create your account in two minutes (it's free to start):`,
+      masterSignupUrl(origin, vessel),
+      ''
+    );
+  }
+  lines.push('If you did not expect this email, ignore it and nothing will change.');
 
   await new SmtpService().sendMail({
     to: vessel.master_email,
     subject: isMaster ? `M.A.T.E: confirm your ship ${ship}` : `M.A.T.E: approve ${officerName} as ${rank.label} on ${ship}`,
     text: lines.join('\n') + SIGN_OFF
+  });
+}
+
+/** Sign-up pre-filled as the Master of this ship, so the Master's own emails work straight away. */
+export function masterSignupUrl(origin: string, vessel: Vessel) {
+  const q = new URLSearchParams({ rank: 'Master', ship_email: vessel.master_email, ref: 'crew-approval' });
+  return `${origin}/signup?${q.toString()}`;
+}
+
+export async function sendApprovedNotice(opts: { to: string; officerName: string; vessel: Vessel; rank: Rank; origin: string }) {
+  const { to, officerName, vessel, rank, origin } = opts;
+  const code = subjectCode(rank.code);
+  const ship = vesselLabel(vessel);
+  await new SmtpService().sendMail({
+    to,
+    subject: `You're approved on ${ship}`,
+    text: [
+      `Hello ${officerName},`,
+      '',
+      `The Master has approved you as ${rank.label} on ${ship}.`,
+      '',
+      vessel.setup_completed_at
+        ? `From your onboard mailbox, email ${vessel.master_email} with "${code} TEST" in the subject once to check your rule. Then put your module and code in the subject of every request, for example "A1 // ${code}".`
+        : `The Master still needs to finish the ship's email setup. You can see the status in your profile: ${origin}/dashboard`,
+      '',
+      'Answers come back to your onboard mailbox, with a copy here.'
+    ].join('\n') + SIGN_OFF
+  });
+}
+
+export async function sendRemovedNotice(opts: { to: string; officerName: string; vessel: Vessel; rank: Rank }) {
+  const { to, officerName, vessel, rank } = opts;
+  await new SmtpService().sendMail({
+    to,
+    subject: `Ship email ended on ${vesselLabel(vessel)}`,
+    text: [
+      `Hello ${officerName},`,
+      '',
+      `The Master has removed you as ${rank.label} on ${vesselLabel(vessel)}, so emails through that ship's mailbox are no longer answered for you.`,
+      'Your M.A.T.E account, history and documents are unchanged. On your next ship, link again from your profile.'
+    ].join('\n') + SIGN_OFF
   });
 }
 

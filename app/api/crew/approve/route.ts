@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '../../../../src/supabase-client';
 import { rankByCode } from '../../../../src/crew/ranks';
 import { activeMember, endMembership, vesselById, VesselMember } from '../../../../src/crew/vessels';
+import { sendApprovedNotice } from '../../../../src/crew/emails';
+import { siteOrigin } from '../../../../src/crew/origin';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,7 +54,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const found = await load(String(body.token || ''));
   if (!found) return NextResponse.json({ error: 'This approval link is not valid.' }, { status: 404 });
-  const { member, current } = found;
+  const { member, current, vessel, officer } = found;
 
   if (member.status === 'removed') {
     return NextResponse.json({ error: 'The officer withdrew this request or linked to another ship.' }, { status: 409 });
@@ -63,6 +65,15 @@ export async function POST(req: NextRequest) {
     const { error } = await supabase.from('vessel_members')
       .update({ status: 'active', approved_at: new Date().toISOString() }).eq('id', member.id);
     if (error) return NextResponse.json({ error: `Couldn't approve: ${error.message}` }, { status: 500 });
+    // Tell the officer at their sign-in address. A failed email doesn't undo the approval.
+    const rank = rankByCode(member.rank_code);
+    if (officer?.email && rank) {
+      try {
+        await sendApprovedNotice({ to: officer.email, officerName: officer.full_name || 'there', vessel, rank, origin: siteOrigin(req) });
+      } catch (mailErr) {
+        console.error('Approval notice failed:', (mailErr as Error).message);
+      }
+    }
   }
   const after = await load(String(body.token));
   return NextResponse.json(after ? view(after) : { status: 'active' });

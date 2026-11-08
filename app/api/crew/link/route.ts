@@ -4,7 +4,7 @@ import { userFromRequest } from '../../../../src/services/limits';
 import { rankByCode, rankFromLabel, subjectCode } from '../../../../src/crew/ranks';
 import {
   endMembership, getOrCreateVessel, isEmail, isOwnAddress, newToken, normalizeEmail, openMembership,
-  vesselById, VesselMember, vesselRanks
+  masterOnMate, vesselById, VesselMember, vesselRanks
 } from '../../../../src/crew/vessels';
 import { sendApprovalRequest } from '../../../../src/crew/emails';
 import { siteOrigin } from '../../../../src/crew/origin';
@@ -83,7 +83,8 @@ export async function POST(req: NextRequest) {
       officerName: profile?.full_name || 'An officer',
       officerEmail: profile?.email || user.email || '',
       approvalToken,
-      origin: siteOrigin(req)
+      origin: siteOrigin(req),
+      masterOnMate: await masterOnMate(vessel)
     });
   } catch (mailErr) {
     console.error('Approval email failed:', (mailErr as Error).message);

@@ -193,6 +193,15 @@ export async function vesselStatus(vessel: Vessel): Promise<{ ranks: RankStatus[
   };
 }
 
+/** Whether the ship's Master already has a M.A.T.E account (by interaction email or as linked Master). */
+export async function masterOnMate(vessel: Vessel): Promise<boolean> {
+  const [{ data: byEmail }, ms] = await Promise.all([
+    supabase.from('profiles').select('id').eq('vessel_email', vessel.master_email).limit(1),
+    activeMember(vessel.id, 'MS')
+  ]);
+  return !!(byEmail && byEmail.length) || !!ms;
+}
+
 export const vesselLabel = (v: Pick<Vessel, 'name'>) => (v.name ? `MV ${v.name}` : 'your vessel');
 
 export { rankByCode };

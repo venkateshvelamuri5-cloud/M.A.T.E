@@ -30,6 +30,12 @@ export default function SignupPage() {
       }
     };
     checkUser();
+    // A Master arriving from a crew approval email: rank and ship email come filled in.
+    const q = new URLSearchParams(window.location.search);
+    const rank = q.get('rank');
+    if (rank && RANK_LABELS.includes(rank)) setRankInput(rank);
+    const shipEmail = q.get('ship_email');
+    if (shipEmail && /\S+@\S+\.\S+/.test(shipEmail)) setVesselEmailInput(shipEmail);
   }, []);
 
   // Each detail the officer fills in pulls more of the agent's swarm into their document.

@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ArrowLeft, Lock, LayoutDashboard, Bot, Library, Users, Activity, Settings, History, LogOut } from 'lucide-react';
+import { ArrowLeft, Lock, LayoutDashboard, Bot, Library, Users, Activity, Settings, History, LogOut, Ship } from 'lucide-react';
 import { supabase } from '../../src/supabase-client';
 import { AnalystProvider } from './_lib/context';
 import { agentStatus } from './_lib/slots';
@@ -12,6 +12,7 @@ const NAV = [
   { href: '/analyst/agents', label: 'Agents', icon: Bot },
   { href: '/analyst/knowledge', label: 'Knowledge', icon: Library },
   { href: '/analyst/people', label: 'People & limits', icon: Users },
+  { href: '/analyst/leads', label: 'Ship leads', icon: Ship },
   { href: '/analyst/activity', label: 'Activity', icon: Activity },
   { href: '/analyst/changes', label: 'Change log', icon: History },
   { href: '/analyst/settings', label: 'Settings', icon: Settings }
