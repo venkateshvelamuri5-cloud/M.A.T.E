@@ -141,14 +141,6 @@ export default function ProfileDialog() {
         </section>
 
         <section className="space-y-3">
-          <div>
-            <h3 className="text-sm font-bold">Ship email access</h3>
-            <p className="text-xs text-muted-foreground">Use M.A.T.E from your onboard mailbox, through the Master's address.</p>
-          </div>
-          <ShipAccess savedRank={profile.rank} />
-        </section>
-
-        <section className="space-y-3">
           <h3 className="text-sm font-bold">Vessel</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Vessel name" htmlFor="pf-vessel"><input id="pf-vessel" className={inputClass} value={form.vessel_name} onChange={e => set('vessel_name', e.target.value)} placeholder="Pioneer Mariner" /></Field>
