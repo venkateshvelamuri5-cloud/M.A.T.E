@@ -132,7 +132,7 @@ export default function ProfileDialog() {
           </Field>
         </section>
 
-        <section className="space-y-3">
+        <section id="ship-email-access" className="space-y-3 scroll-mt-4">
           <div>
             <h3 className="text-sm font-bold">Ship email access</h3>
             <p className="text-xs text-muted-foreground">Use M.A.T.E from your onboard mailbox, through the Master's address.</p>
