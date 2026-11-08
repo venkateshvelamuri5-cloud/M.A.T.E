@@ -7,6 +7,7 @@ import { OfficerProvider, useOfficer } from './_lib/officer';
 import { Meter } from './_lib/ui';
 import HelpPanel from './_components/HelpPanel';
 import ProfileDialog from './_components/ProfileDialog';
+import { WhatsNewButton } from './_components/WhatsNew';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -61,6 +62,8 @@ function Shell({ children }: { children: React.ReactNode }) {
               <Sparkles className="w-3.5 h-3.5" /> Upgrade
             </button>
           )}
+
+          <WhatsNewButton />
 
           <button type="button" onClick={() => openHelp('start')} className="inline-flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted" aria-label="Help">
             <CircleHelp className="w-4 h-4" /><span className="hidden sm:inline">Help</span>
