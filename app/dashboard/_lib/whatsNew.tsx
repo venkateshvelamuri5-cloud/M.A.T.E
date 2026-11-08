@@ -18,6 +18,17 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    id: '2026-11-ship-email-status',
+    date: '2026-11-08',
+    title: 'Ship email: status on your home page',
+    body: 'Once you link a ship, your home page shows where it stands: pending, approved or ready.',
+    points: [
+      "You'll get an email at your sign-in address when the Master approves you.",
+      'Emails you send from your sign-in address are answered too.'
+    ],
+    action: { label: 'Open ship email', target: 'ship-email' }
+  },
+  {
     id: '2026-11-crew-email',
     date: '2026-11-08',
     title: 'Use M.A.T.E from your onboard mailbox',

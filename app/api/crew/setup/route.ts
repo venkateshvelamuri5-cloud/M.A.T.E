@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '../../../../src/supabase-client';
 import { rankByCode, ROUTED_RANKS } from '../../../../src/crew/ranks';
-import { isEmail, isOwnAddress, mateInbox, normalizeEmail, vesselBySetupToken, vesselRanks, vesselStatus, Vessel } from '../../../../src/crew/vessels';
-import { sendWelcome } from '../../../../src/crew/emails';
+import { activeMember, endMembership, isEmail, isOwnAddress, mateInbox, normalizeEmail, vesselBySetupToken, vesselRanks, vesselStatus, Vessel } from '../../../../src/crew/vessels';
+import { sendRemovedNotice, sendWelcome } from '../../../../src/crew/emails';
 import { siteOrigin } from '../../../../src/crew/origin';
 
 export const dynamic = 'force-dynamic';
 
 // The ship setup page's data. The token was emailed to the Master's address and is the only key.
 // GET reads the ship, POST {action:'save'} stores the onboard mailboxes, POST {action:'complete'}
-// marks setup done and sends each rank a welcome email through the Master's rules.
+// marks setup done and sends each rank a welcome email through the Master's rules,
+// POST {action:'remove', rank} ends the officer's access for that rank (e.g. they signed off).
 
 async function payload(vessel: Vessel) {
   const { ranks } = await vesselStatus(vessel);
@@ -80,6 +81,23 @@ export async function POST(req: NextRequest) {
       }
     }
     return NextResponse.json({ ...(await payload(updated)), welcomeSent: sent });
+  }
+
+  if (body.action === 'remove') {
+    const rank = rankByCode(String(body.rank || ''));
+    if (!rank) return NextResponse.json({ error: 'Unknown rank.' }, { status: 400 });
+    const member = await activeMember(vessel.id, rank.code);
+    if (!member) return NextResponse.json(await payload(vessel));
+    await endMembership(member.id);
+    const { data: officer } = await supabase.from('profiles').select('full_name, email').eq('id', member.user_id).maybeSingle();
+    if (officer?.email) {
+      try {
+        await sendRemovedNotice({ to: officer.email, officerName: officer.full_name || 'there', vessel, rank });
+      } catch (mailErr) {
+        console.error('Removal notice failed:', (mailErr as Error).message);
+      }
+    }
+    return NextResponse.json({ ...(await payload(vessel)), removed: rank.label });
   }
 
   return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });

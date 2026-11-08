@@ -4,9 +4,9 @@ import { Ship, CheckCircle2, Clock, AlertCircle } from 'lucide-react';
 import { supabase } from '../../../src/supabase-client';
 import { rankFromLabel, subjectCode } from '../../../src/crew/ranks';
 import { useOfficer } from '../_lib/officer';
-import { Button, Field, inputClass } from '../_lib/ui';
+import { Button, Card, Field, inputClass } from '../_lib/ui';
 
-interface Link {
+export interface Link {
   status: 'pending' | 'active';
   rankCode: string;
   rankLabel: string;
@@ -17,7 +17,7 @@ interface Link {
   ruleWorking: boolean;
 }
 
-async function call(method: 'GET' | 'POST' | 'DELETE', body?: unknown) {
+export async function call(method: 'GET' | 'POST' | 'DELETE', body?: unknown) {
   const { data: { session } } = await supabase.auth.getSession();
   const res = await fetch('/api/crew/link', {
     method,
@@ -27,6 +27,43 @@ async function call(method: 'GET' | 'POST' | 'DELETE', body?: unknown) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error || 'Something went wrong.');
   return json as { link: Link | null; notice?: string };
+}
+
+/** Where the officer's ship link stands, in one line. Shared by the profile and the home card. */
+export function StatusLine({ link }: { link: Link }) {
+  const cls = 'flex items-start gap-2';
+  if (link.status === 'pending') return <p className={`${cls} text-amber-700`}><Clock className="w-4 h-4 mt-0.5 shrink-0" />Pending. Waiting for the Master to approve. They were emailed a link.</p>;
+  if (!link.setupComplete) return <p className={`${cls} text-amber-700`}><Clock className="w-4 h-4 mt-0.5 shrink-0" />Approved. Waiting for the Master to finish the ship's email setup.</p>;
+  if (link.ruleWorking) return <p className={`${cls} text-emerald-700`}><CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />Ready. Your rank's forwarding rule has been tested.</p>;
+  return <p className={`${cls} text-amber-700`}><AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />Approved and set up. Send one email with the subject “{link.subjectCode} TEST” to check your rule.</p>;
+}
+
+/** Dashboard home: the officer's ship email status at a glance. Hidden when they haven't linked a ship. */
+export function ShipEmailCard() {
+  const { openProfile, profileOpen } = useOfficer();
+  const [link, setLink] = useState<Link | null>(null);
+  useEffect(() => {
+    // Reload after the profile closes, since the officer may have linked or unlinked there.
+    if (profileOpen) return;
+    call('GET').then(r => setLink(r.link)).catch(() => setLink(null));
+  }, [profileOpen]);
+  if (!link) return null;
+
+  const ship = link.vesselName ? `MV ${link.vesselName}` : link.masterEmail;
+  const open = () => {
+    openProfile();
+    setTimeout(() => document.getElementById('ship-email-access')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
+  };
+  return (
+    <Card className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="w-9 h-9 rounded-full bg-indigo-100 text-[#575ECF] flex items-center justify-center shrink-0"><Ship className="w-4 h-4" /></div>
+      <div className="flex-1 min-w-0 text-sm space-y-1">
+        <div className="font-semibold">Ship email: {link.rankLabel} on {ship} <span className="text-muted-foreground font-normal">({link.subjectCode})</span></div>
+        <StatusLine link={link} />
+      </div>
+      <Button size="sm" onClick={open}>Details</Button>
+    </Card>
+  );
 }
 
 /**
@@ -83,15 +120,7 @@ export default function ShipAccess({ savedRank }: { savedRank?: string | null })
             <div className="text-xs text-muted-foreground break-all">Master's address: {link.masterEmail}</div>
           </div>
         </div>
-        {link.status === 'pending' ? (
-          <p className="flex items-start gap-2 text-amber-700"><Clock className="w-4 h-4 mt-0.5 shrink-0" />Waiting for the Master to approve. They were emailed a link.</p>
-        ) : !link.setupComplete ? (
-          <p className="flex items-start gap-2 text-amber-700"><Clock className="w-4 h-4 mt-0.5 shrink-0" />Approved. Waiting for the Master to finish the ship's email setup.</p>
-        ) : link.ruleWorking ? (
-          <p className="flex items-start gap-2 text-emerald-700"><CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />Ready. Your rank's forwarding rule has been tested.</p>
-        ) : (
-          <p className="flex items-start gap-2 text-amber-700"><AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />Ship is set up. Send one email with the subject “{link.subjectCode} TEST” to check your rule.</p>
-        )}
+        <StatusLine link={link} />
         {link.status === 'active' && (
           <p className="text-xs text-muted-foreground leading-relaxed">
             From your onboard mailbox, email the Master's address with the module and your code in the subject,

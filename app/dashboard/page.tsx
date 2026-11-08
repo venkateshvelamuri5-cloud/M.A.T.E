@@ -10,6 +10,7 @@ import AskBox from './_components/AskBox';
 import DocumentsCard from './_components/DocumentsCard';
 import RunHistory, { moduleForLog, RunDialog } from './_components/RunHistory';
 import { WhatsNewCard } from './_components/WhatsNew';
+import { ShipEmailCard } from './_components/ShipAccess';
 
 /** Category names are stored like "(A) ISM Admin Works"; the letter is shown on each module instead. */
 const cleanCategory = (name: string) => name.replace(/^\([A-F]\)\s*/, '');
@@ -113,6 +114,7 @@ export default function OfficerHome() {
       <div className="grid gap-8 lg:grid-cols-[1fr_320px] items-start">
         <div className="space-y-8 min-w-0">
           <WhatsNewCard />
+          <ShipEmailCard />
 
           {atLimit && (
             <Card className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-3 border-red-200 bg-red-50/60">

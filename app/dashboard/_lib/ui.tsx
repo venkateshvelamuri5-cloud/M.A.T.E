@@ -1,5 +1,6 @@
 'use client';
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { Chip } from '../../analyst/_lib/ui';
 import { OfficerFile } from './officer';
@@ -21,8 +22,10 @@ export function Dialog({ open, onClose, title, subtitle, children, footer, wide 
     panel.current?.focus();
     return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
   }, [open, onClose]);
-  if (!open) return null;
-  return (
+  if (!open || typeof document === 'undefined') return null;
+  // Portal to <body>: a dialog opened from the header would otherwise be trapped inside it, because
+  // the header's backdrop blur makes it the containing block for fixed elements.
+  return createPortal(
     <div className="fixed inset-0 z-[70] bg-zinc-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
       <div
         ref={panel}
@@ -44,7 +47,8 @@ export function Dialog({ open, onClose, title, subtitle, children, footer, wide 
         <div className="overflow-y-auto px-5 sm:px-6 py-5 flex-1">{children}</div>
         {footer && <div className="px-5 sm:px-6 py-3 border-t border-border flex flex-wrap justify-end gap-2">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

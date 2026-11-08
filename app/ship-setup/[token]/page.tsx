@@ -116,6 +116,28 @@ export default function ShipSetupPage({ params }: { params: { token: string } })
     }
   };
 
+  // Crew change: the officer who signed off loses access; the next one links from their own profile.
+  const removeOfficer = async (r: RankRow) => {
+    if (!window.confirm(`Remove ${r.officer} as ${r.label}? Their emails through this ship stop being answered. They keep their M.A.T.E account.`)) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const res = await fetch('/api/crew/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, action: 'remove', rank: r.code })
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error);
+      apply(j);
+      setNotice(`${r.officer} removed as ${r.label}. The next ${r.label} can link from their own M.A.T.E profile.`);
+    } catch (e) {
+      setNotice((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (error) return <PublicShell><Card className="p-6 text-sm">{error}</Card></PublicShell>;
   if (!setup) return <PublicShell><p className="text-sm text-muted-foreground">Loading…</p></PublicShell>;
 
@@ -221,6 +243,12 @@ export default function ShipSetupPage({ params }: { params: { token: string } })
               </span>
               <span className="flex items-center gap-2">
                 {r.officer ? <Chip tone="indigo">{r.officer}</Chip> : <Chip>No officer linked</Chip>}
+                {r.officer && (
+                  <button type="button" disabled={busy} onClick={() => removeOfficer(r)}
+                    className="text-xs font-semibold text-rose-600 hover:underline disabled:opacity-50 print:hidden">
+                    Remove
+                  </button>
+                )}
                 {!r.onboardEmail && <Chip tone="amber">No mailbox</Chip>}
               </span>
             </li>

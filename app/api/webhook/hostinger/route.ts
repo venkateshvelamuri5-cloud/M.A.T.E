@@ -270,11 +270,15 @@ export async function POST(req: NextRequest) {
 
     // 3. Connect to Supabase to verify user profiles and limits
     try {
-      const { data: dbProfiles, error: profileErr } = await supabase
-        .from('profiles')
-        .select('id, subscription_plan, email, full_name, rank, company_name, vessel_name, vessel_type, operator_name, grt, has_pump_room, pump_system_type, has_bow_thruster, carries_chemical_cargo, has_egcs, egcs_type, operates_us_waters, operates_aus_nz_waters, operates_eu_waters, operates_chinese_waters, role')
-          .eq(crew?.member ? 'id' : 'vessel_email', crew?.member ? crew.member.user_id : from)
-        .limit(5);
+      const profileColumns = 'id, subscription_plan, email, full_name, rank, company_name, vessel_name, vessel_type, operator_name, grt, has_pump_room, pump_system_type, has_bow_thruster, carries_chemical_cargo, has_egcs, egcs_type, operates_us_waters, operates_aus_nz_waters, operates_eu_waters, operates_chinese_waters, role';
+      const findBy = (column: string, value: string) => supabase.from('profiles').select(profileColumns).eq(column, value).limit(5);
+      // Crew mail: the officer holding the rank. Otherwise the interaction email, then the sign-in (Gmail) address.
+      let { data: dbProfiles, error: profileErr } = crew?.member
+        ? await findBy('id', crew.member.user_id)
+        : await findBy('vessel_email', from);
+      if (!crew?.member && !profileErr && (!dbProfiles || dbProfiles.length === 0)) {
+        ({ data: dbProfiles, error: profileErr } = await findBy('email', from.toLowerCase()));
+      }
 
       // Several officers may have entered the same ship address. Without a rank code, it's the Master's.
       profile = dbProfiles && dbProfiles.length > 0
