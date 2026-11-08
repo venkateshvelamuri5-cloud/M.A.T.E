@@ -3,6 +3,8 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../src/supabase-client';
 import { Profile, profileCompleteness, useOfficer } from '../_lib/officer';
 import { Button, Dialog, Field, Meter, SlotCode, inputClass } from '../_lib/ui';
+import { isListedRank, RANK_LABELS } from '../../../src/crew/ranks';
+import ShipAccess from './ShipAccess';
 
 const EMAIL_CHANGE_DAYS = 15;
 
@@ -115,7 +117,12 @@ export default function ProfileDialog() {
           <h3 className="text-sm font-bold">You</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Field label="Full name" htmlFor="pf-name"><input id="pf-name" className={inputClass} value={form.full_name} onChange={e => set('full_name', e.target.value)} placeholder="Capt. John Doe" /></Field>
-            <Field label="Rank" htmlFor="pf-rank"><input id="pf-rank" className={inputClass} value={form.rank} onChange={e => set('rank', e.target.value)} placeholder="Master" /></Field>
+            <Field label="Rank" htmlFor="pf-rank">
+              <select id="pf-rank" className={inputClass} value={form.rank} onChange={e => set('rank', e.target.value)}>
+                {!isListedRank(form.rank) && <option value={form.rank}>{form.rank ? `${form.rank} (choose from the list)` : 'Choose your rank'}</option>}
+                {RANK_LABELS.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </Field>
             <Field label="Company" htmlFor="pf-company"><input id="pf-company" className={inputClass} value={form.company_name} onChange={e => set('company_name', e.target.value)} placeholder="Ocean Shipping Ltd" /></Field>
           </div>
           <Field label="Interaction email" htmlFor="pf-vemail" hint={emailLocked
@@ -123,6 +130,14 @@ export default function ProfileDialog() {
             : `The ship's address you email M.A.T.E from. It can be changed once every ${EMAIL_CHANGE_DAYS} days.`}>
             <input id="pf-vemail" type="email" className={inputClass} value={form.vessel_email} onChange={e => set('vessel_email', e.target.value)} placeholder="master@vessel.com" disabled={emailLocked} />
           </Field>
+        </section>
+
+        <section className="space-y-3">
+          <div>
+            <h3 className="text-sm font-bold">Ship email access</h3>
+            <p className="text-xs text-muted-foreground">Use M.A.T.E from your onboard mailbox, through the Master's address.</p>
+          </div>
+          <ShipAccess savedRank={profile.rank} />
         </section>
 
         <section className="space-y-3">
