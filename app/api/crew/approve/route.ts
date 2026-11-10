@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '../../../../src/supabase-client';
 import { rankByCode } from '../../../../src/crew/ranks';
-import { activeMember, endMembership, vesselById, VesselMember } from '../../../../src/crew/vessels';
-import { sendApprovedNotice } from '../../../../src/crew/emails';
+import { activeMember, vesselById, VesselMember } from '../../../../src/crew/vessels';
+import { approveMember } from '../../../../src/crew/approval';
 import { siteOrigin } from '../../../../src/crew/origin';
 
 export const dynamic = 'force-dynamic';
 
 // The Master's one-click approval. The link was emailed to the Master's address, so holding the
-// token shows the Master (or someone at their mailbox) agrees. GET only reads, so link scanners
+// token shows the Master (or someone at their mailbox) agrees. Masters who can't open the site
+// reply APPROVE to the email instead (src/crew/approval.ts). GET only reads, so link scanners
 // that open URLs in email can't approve anything; the page's button POSTs.
 
 async function load(token: string) {
@@ -54,26 +55,10 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const found = await load(String(body.token || ''));
   if (!found) return NextResponse.json({ error: 'This approval link is not valid.' }, { status: 404 });
-  const { member, current, vessel, officer } = found;
-
-  if (member.status === 'removed') {
-    return NextResponse.json({ error: 'The officer withdrew this request or linked to another ship.' }, { status: 409 });
-  }
-  if (member.status === 'pending') {
-    // Crew change: the new officer takes the rank over from whoever held it.
-    if (current && current.id !== member.id) await endMembership(current.id);
-    const { error } = await supabase.from('vessel_members')
-      .update({ status: 'active', approved_at: new Date().toISOString() }).eq('id', member.id);
-    if (error) return NextResponse.json({ error: `Couldn't approve: ${error.message}` }, { status: 500 });
-    // Tell the officer at their sign-in address. A failed email doesn't undo the approval.
-    const rank = rankByCode(member.rank_code);
-    if (officer?.email && rank) {
-      try {
-        await sendApprovedNotice({ to: officer.email, officerName: officer.full_name || 'there', vessel, rank, origin: siteOrigin(req) });
-      } catch (mailErr) {
-        console.error('Approval notice failed:', (mailErr as Error).message);
-      }
-    }
+  const { member, vessel } = found;
+  const result = await approveMember(member, vessel, siteOrigin(req));
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: member.status === 'removed' ? 409 : 500 });
   }
   const after = await load(String(body.token));
   return NextResponse.json(after ? view(after) : { status: 'active' });
