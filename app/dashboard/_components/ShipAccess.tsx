@@ -32,7 +32,7 @@ export async function call(method: 'GET' | 'POST' | 'DELETE', body?: unknown) {
 /** Where the officer's ship link stands, in one line. Shared by the profile and the home card. */
 export function StatusLine({ link }: { link: Link }) {
   const cls = 'flex items-start gap-2';
-  if (link.status === 'pending') return <p className={`${cls} text-amber-700`}><Clock className="w-4 h-4 mt-0.5 shrink-0" />Pending. Waiting for the Master to approve. They were emailed a link.</p>;
+  if (link.status === 'pending') return <p className={`${cls} text-amber-700`}><Clock className="w-4 h-4 mt-0.5 shrink-0" />Pending. Waiting for the Master to approve. They were emailed and can approve by replying APPROVE, so the ship doesn't need web access.</p>;
   if (!link.setupComplete) return <p className={`${cls} text-amber-700`}><Clock className="w-4 h-4 mt-0.5 shrink-0" />Approved. Waiting for the Master to finish the ship's email setup.</p>;
   if (link.ruleWorking) return <p className={`${cls} text-emerald-700`}><CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />Ready. Your rank's forwarding rule has been tested.</p>;
   return <p className={`${cls} text-amber-700`}><AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />Approved and set up. Send one email with the subject “{link.subjectCode} TEST” to check your rule.</p>;

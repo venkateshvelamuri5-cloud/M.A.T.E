@@ -6,6 +6,9 @@ import { mateInbox, Vessel, vesselLabel } from './vessels';
 // so the Master's outgoing rule can't send it back to M.A.T.E. Mail meant for an officer always
 // does, so the Master's return rule for that rank forwards it to the onboard mailbox.
 
+/** The short reference shown in an approval email's subject and body: the start of the approval token. */
+export const approvalRef = (token: string) => token.slice(0, 10).toUpperCase();
+
 const SIGN_OFF = '\n\nBest regards,\nM.A.T.E Team';
 
 export async function sendApprovalRequest(opts: {
@@ -16,6 +19,7 @@ export async function sendApprovalRequest(opts: {
   const { vessel, rank, officerName, officerEmail, approvalToken, origin, masterOnMate = true } = opts;
   const ship = vesselLabel(vessel);
   const approveUrl = `${origin}/crew/approve?token=${approvalToken}`;
+  const ref = approvalRef(approvalToken);
   const setupUrl = `${origin}/ship-setup/${vessel.setup_token}`;
   const isMaster = rank.code === 'MS';
 
@@ -23,9 +27,13 @@ export async function sendApprovalRequest(opts: {
     'Hello Captain,',
     '',
     isMaster
-      ? `${officerName} (${officerEmail}) has linked a M.A.T.E account to this address as the Master of ${ship}. Please confirm it's you:`
-      : `${officerName} (${officerEmail}) wants to use M.A.T.E as ${rank.label} on ${ship}, through this mailbox. Please approve:`,
-    approveUrl,
+      ? `${officerName} (${officerEmail}) has linked a M.A.T.E account to this address as the Master of ${ship}. Please confirm it's you.`
+      : `${officerName} (${officerEmail}) wants to use M.A.T.E as ${rank.label} on ${ship}, through this mailbox. Please approve.`,
+    '',
+    'To approve, reply to this email with the word APPROVE. Keep the subject as it is.',
+    `Or, if this computer can open websites, use this link: ${approveUrl}`,
+    '',
+    `Ref: ${ref}`,
     ''
   ];
   if (!vessel.setup_completed_at) {
@@ -52,8 +60,47 @@ export async function sendApprovalRequest(opts: {
 
   await new SmtpService().sendMail({
     to: vessel.master_email,
-    subject: isMaster ? `M.A.T.E: confirm your ship ${ship}` : `M.A.T.E: approve ${officerName} as ${rank.label} on ${ship}`,
-    text: lines.join('\n') + SIGN_OFF
+    subject: (isMaster ? `M.A.T.E: confirm your ship ${ship}` : `M.A.T.E: approve ${officerName} as ${rank.label} on ${ship}`) + ` (Ref: ${ref})`,
+    text: lines.join('\n') + SIGN_OFF,
+    // The Master's reply must reach the inbox the webhook reads, even if mail is sent from another address.
+    replyTo: mateInbox()
+  });
+}
+
+/** Answers the Master's emailed reply to an approval request. Never carries "MATE-", so it stays with the Master. */
+export async function sendReplyApprovalResult(opts: {
+  vessel: Vessel; officerName: string; rankLabel: string; ref: string; origin: string;
+  outcome: 'approved' | 'already' | 'unclear' | 'failed'; error?: string;
+}) {
+  const { vessel, officerName, rankLabel, ref, origin, outcome, error } = opts;
+  const ship = vesselLabel(vessel);
+  const who = `${officerName} as ${rankLabel} on ${ship}`;
+  const lines = ['Hello Captain,', ''];
+  if (outcome === 'approved' || outcome === 'already') {
+    lines.push(outcome === 'approved' ? `Thank you. ${who} is approved.` : `${who} was already approved. Nothing changed.`, '');
+    if (!vessel.setup_completed_at) {
+      lines.push(
+        'This ship is not set up for crew email yet. The setup page lists each rank\'s onboard mailbox and the Outlook rules to add.',
+        'If this computer can\'t open it, the officer can open it from a phone or in port and send you the rules:',
+        `${origin}/ship-setup/${vessel.setup_token}`,
+        ''
+      );
+    }
+  } else if (outcome === 'unclear') {
+    lines.push(
+      `We received your reply about ${who}, but it didn't say APPROVE, so nothing changed.`,
+      'To approve, reply to the original email with the word APPROVE. If you don\'t want to approve, no action is needed.',
+      ''
+    );
+  } else {
+    lines.push(`We couldn't approve ${who}: ${error || 'something went wrong'}.`, '');
+  }
+  lines.push(`Ref: ${ref}`);
+  await new SmtpService().sendMail({
+    to: vessel.master_email,
+    subject: outcome === 'approved' || outcome === 'already' ? `M.A.T.E: ${officerName} approved on ${ship}` : `M.A.T.E: not approved yet (Ref: ${ref})`,
+    text: lines.join('\n') + SIGN_OFF,
+    replyTo: mateInbox()
   });
 }
 

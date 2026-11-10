@@ -11,6 +11,7 @@ import { CrewSender, isOwnAddress, markTestPassed, resolveCrewSender } from '../
 import { sendNotLinked, sendTestReply } from '../../../../src/crew/emails';
 import { rankFromLabel } from '../../../../src/crew/ranks';
 import { siteOrigin } from '../../../../src/crew/origin';
+import { handleApprovalReply } from '../../../../src/crew/approval';
 
 /**
  * POST handler for Hostinger Webhook
@@ -154,6 +155,15 @@ export async function POST(req: NextRequest) {
         console.error('Failed to send redirection email:', (mailErr as Error).message);
       }
       return NextResponse.json({ success: true, message: 'Redirect auto-reply sent' });
+    }
+
+    // A Master replying APPROVE to an approval request, for ships whose computers can't open the site.
+    try {
+      if (await handleApprovalReply({ from, subject, body: bodyText, origin: siteOrigin(req) })) {
+        return NextResponse.json({ success: true, message: 'Handled Master approval reply' });
+      }
+    } catch (approvalErr) {
+      console.warn('Approval reply handling failed, treating as a normal email:', (approvalErr as Error).message);
     }
 
     // Crew mail forwarded by a Master's Outlook rule: "A1 // MATE-CE" from a ship's Master address
