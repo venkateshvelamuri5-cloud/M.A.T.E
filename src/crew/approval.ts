@@ -1,7 +1,7 @@
 import { supabase } from '../supabase-client';
 import { rankByCode } from './ranks';
 import { activeMember, endMembership, normalizeEmail, vesselByMasterEmail, Vessel, VesselMember } from './vessels';
-import { approvalRef, sendApprovedNotice, sendReplyApprovalResult } from './emails';
+import { approvalRef, sendApprovedNotice, sendDeclinedNotice, sendReplyApprovalResult } from './emails';
 
 // Approving an officer, from the link page or by the Master replying to the approval email.
 //
@@ -44,11 +44,14 @@ export function replyText(body: string): string {
   return out.join('\n').trim();
 }
 
-export type ReplyDecision = 'approve' | 'unclear';
+export type ReplyDecision = 'approve' | 'decline' | 'unclear';
 
 export function replyDecision(body: string): ReplyDecision {
-  const words = replyText(body).slice(0, 300).toLowerCase();
-  if (/\b(not|don't|dont|do not|never)\s+approve/.test(words) || /\b(reject|decline|deny|refuse)/.test(words)) return 'unclear';
+  const words = replyText(body).slice(0, 1200).toLowerCase();
+  // The Approve and Decline buttons write "Decision: APPROVE" or "Decision: DECLINE".
+  const explicit = words.match(/\bdecision\s*[:\-]?\s*(approve|decline)/);
+  if (explicit) return explicit[1] === 'approve' ? 'approve' : 'decline';
+  if (/\b(not|don't|dont|do not|never|cannot|can't)\s+(approve|confirm)/.test(words) || /\b(reject|decline|deny|refuse)/.test(words)) return 'decline';
   if (/\b(approve|approved|approving|confirm|confirmed|yes)\b/.test(words)) return 'approve';
   return 'unclear';
 }
@@ -105,8 +108,22 @@ export async function handleApprovalReply(opts: { from: string; subject: string;
   const rankLabel = rankByCode(member.rank_code)?.label || member.rank_code;
   const ref10 = approvalRef(member.approval_token || ref);
 
-  if (replyDecision(opts.body) !== 'approve') {
+  const decision = replyDecision(opts.body);
+  if (decision === 'unclear') {
     await sendReplyApprovalResult({ vessel, officerName, rankLabel, ref: ref10, outcome: 'unclear', origin: opts.origin });
+    return true;
+  }
+  if (decision === 'decline') {
+    if (member.status === 'pending') {
+      await endMembership(member.id);
+      const { data: who } = await supabase.from('profiles').select('email').eq('id', member.user_id).maybeSingle();
+      const rank = rankByCode(member.rank_code);
+      if (who?.email && rank) {
+        try { await sendDeclinedNotice({ to: who.email, officerName, vessel, rank }); }
+        catch (mailErr) { console.error('Declined notice failed:', (mailErr as Error).message); }
+      }
+    }
+    await sendReplyApprovalResult({ vessel, officerName, rankLabel, ref: ref10, outcome: member.status === 'active' ? 'already' : 'declined', origin: opts.origin });
     return true;
   }
   const result = await approveMember(member, vessel, opts.origin);

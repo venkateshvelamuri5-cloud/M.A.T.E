@@ -84,6 +84,8 @@ export async function POST(req: NextRequest) {
     const requestDocType = emailData.requestDocType || emailData.docType || 'pdf'; // Default to pdf responses
 
     replyTo = from;
+    // A subject-only email (for example "MATE-CE TEST", or a request typed in the subject) is still a request.
+    if (!bodyText && typeof subject === 'string' && subject.trim()) bodyText = subject;
 
     // Never answer M.A.T.E's own mail (a Master's rule without its exception would otherwise loop).
     if (from && isOwnAddress(from)) {
