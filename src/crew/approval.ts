@@ -1,7 +1,7 @@
 import { supabase } from '../supabase-client';
 import { rankByCode } from './ranks';
-import { activeMember, endMembership, normalizeEmail, vesselByMasterEmail, Vessel, VesselMember } from './vessels';
-import { approvalRef, sendApprovedNotice, sendDeclinedNotice, sendReplyApprovalResult } from './emails';
+import { activeMember, endMembership, isEmail, isOwnAddress, normalizeEmail, vesselByMasterEmail, Vessel, VesselMember } from './vessels';
+import { approvalRef, sendApprovedNotice, sendDeclinedNotice, sendReplyApprovalResult, sendRulesEmail } from './emails';
 
 // Approving an officer, from the link page or by the Master replying to the approval email.
 //
@@ -61,6 +61,8 @@ export interface ApproveResult {
   /** Set when nothing changed, in words the Master can read. */
   error?: string;
   alreadyActive?: boolean;
+  /** The officer's onboard mailbox, taken from their profile, when the Outlook rules were emailed to the Master. */
+  rulesSentFor?: string;
 }
 
 /** Makes a pending request active, ends whoever held the rank before, and tells the officer. */
@@ -75,17 +77,45 @@ export async function approveMember(member: VesselMember, vessel: Vessel, origin
     .update({ status: 'active', approved_at: new Date().toISOString() }).eq('id', member.id);
   if (error) return { ok: false, error: `Couldn't approve: ${error.message}` };
 
-  // Tell the officer at their sign-in address. A failed email doesn't undo the approval.
-  const { data: officer } = await supabase.from('profiles').select('full_name, email').eq('id', member.user_id).maybeSingle();
+  // The officer's interaction email is their onboard mailbox (the one without internet). It becomes this
+  // rank's forwarding address, so the Master gets the Outlook rules by email and never needs the website.
+  const { data: officer } = await supabase.from('profiles').select('full_name, email, vessel_email').eq('id', member.user_id).maybeSingle();
   const rank = rankByCode(member.rank_code);
+  const onboard = normalizeEmail(officer?.vessel_email);
+  let rulesSentFor: string | undefined;
+  let updated = vessel;
+  if (rank && rank.code !== 'MS' && onboard && isEmail(onboard) && !isOwnAddress(onboard) && onboard !== vessel.master_email) {
+    const { data: before } = await supabase.from('vessel_ranks').select('onboard_email')
+      .eq('vessel_id', vessel.id).eq('rank_code', rank.code).maybeSingle();
+    const changed = (before?.onboard_email || null) !== onboard;
+    await supabase.from('vessel_ranks').upsert(
+      changed
+        ? { vessel_id: vessel.id, rank_code: rank.code, onboard_email: onboard, test_passed_at: null, welcome_sent_at: null }
+        : { vessel_id: vessel.id, rank_code: rank.code, onboard_email: onboard },
+      { onConflict: 'vessel_id,rank_code' }
+    );
+    if (!vessel.setup_completed_at) {
+      const now = new Date().toISOString();
+      await supabase.from('vessels').update({ setup_completed_at: now }).eq('id', vessel.id);
+      updated = { ...vessel, setup_completed_at: now };
+    }
+    try {
+      await sendRulesEmail({ vessel: updated, rank, onboardEmail: onboard, officerName: officer?.full_name || 'the officer', firstRank: !vessel.setup_completed_at });
+      rulesSentFor = onboard;
+    } catch (mailErr) {
+      console.error('Rules email failed:', (mailErr as Error).message);
+    }
+  }
+
+  // Tell the officer at their sign-in address. A failed email doesn't undo the approval.
   if (officer?.email && rank) {
     try {
-      await sendApprovedNotice({ to: officer.email, officerName: officer.full_name || 'there', vessel, rank, origin });
+      await sendApprovedNotice({ to: officer.email, officerName: officer.full_name || 'there', vessel: updated, rank, origin, rulesSent: !!rulesSentFor });
     } catch (mailErr) {
       console.error('Approval notice failed:', (mailErr as Error).message);
     }
   }
-  return { ok: true };
+  return { ok: true, rulesSentFor };
 }
 
 /**
@@ -130,7 +160,8 @@ export async function handleApprovalReply(opts: { from: string; subject: string;
   await sendReplyApprovalResult({
     vessel, officerName, rankLabel, ref: ref10, origin: opts.origin,
     outcome: result.ok ? (result.alreadyActive ? 'already' : 'approved') : 'failed',
-    error: result.error
+    error: result.error,
+    rulesSent: !!result.rulesSentFor
   });
   return true;
 }

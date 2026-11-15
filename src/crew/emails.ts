@@ -23,7 +23,7 @@ function emailHtml(opts: {
   after?: string[];
   footnote?: string;
 }) {
-  const p = (html: string) => `<p style="margin:0 0 14px 0;font-size:14px;line-height:1.55;color:#1c2024;">${html}</p>`;
+  const p = (html: string) => html.startsWith('<table') ? html : `<p style="margin:0 0 14px 0;font-size:14px;line-height:1.55;color:#1c2024;">${html}</p>`;
   const buttons = (opts.buttons || []).map(b => {
     const style = b.tone === 'primary'
       ? 'background:#1f3a5f;color:#ffffff;border:1px solid #1f3a5f;'
@@ -139,12 +139,9 @@ export async function sendApprovalRequest(opts: {
   lines.push('If you did not expect this email, ignore it and nothing will change.');
 
   const after = [
-    'Approve opens a reply that is already written. Just press <b>Send</b>. M.A.T.E checks it came from this mailbox, marks the officer as verified and confirms back to you. No website is needed.',
+    'Approve opens a reply that is already written. Just press <b>Send</b>. M.A.T.E checks it came from this mailbox, marks the officer as verified, and emails you the Outlook rules for their rank. No website is needed.',
     `If the buttons don't open your mail program, reply to this email with the word <b>APPROVE</b> and keep the subject as it is.`
   ];
-  if (!vessel.setup_completed_at) {
-    after.push(`This ship is not yet set up for crew email. When convenient, the <a href="${esc(setupUrl)}" style="color:#1f3a5f;">ship setup page</a> lists each rank's onboard mailbox and the Outlook rules to add. It takes about 15 minutes, once per ship.`);
-  }
   if (!isMaster && !masterOnMate) {
     after.push(`M.A.T.E can also prepare the Master's own paperwork, such as risk assessments, audit closures and drill records, written for ${esc(ship)}. <a href="${esc(masterSignupUrl(origin, vessel))}" style="color:#1f3a5f;">Create your account</a>. It is free to start.`);
   }
@@ -173,8 +170,10 @@ export async function sendApprovalRequest(opts: {
 export async function sendReplyApprovalResult(opts: {
   vessel: Vessel; officerName: string; rankLabel: string; ref: string; origin: string;
   outcome: 'approved' | 'already' | 'declined' | 'unclear' | 'failed'; error?: string;
+  /** The Outlook rules for this rank went out in a separate email. */
+  rulesSent?: boolean;
 }) {
-  const { vessel, officerName, rankLabel, ref, origin, outcome, error } = opts;
+  const { vessel, officerName, rankLabel, ref, origin, outcome, error, rulesSent } = opts;
   const ship = vesselLabel(vessel);
   const who = `${officerName} as ${rankLabel} on ${ship}`;
   const setupUrl = `${origin}/ship-setup/${vessel.setup_token}`;
@@ -183,7 +182,9 @@ export async function sendReplyApprovalResult(opts: {
     paras.push(outcome === 'approved'
       ? `Thank you. ${who} is now verified. We have let them know.`
       : `${who} was already verified. Nothing has changed.`);
-    if (!vessel.setup_completed_at) {
+    if (rulesSent) {
+      paras.push('We have sent you a separate email with the Outlook rules for this officer. Adding them takes about five minutes.');
+    } else if (!vessel.setup_completed_at) {
       paras.push(`This ship is not yet set up for crew email. The setup page lists each rank's onboard mailbox and the Outlook rules to add. If this computer can't open it, the officer can open it from a phone or in port and send you the rules: ${setupUrl}`);
     }
   } else if (outcome === 'declined') {
@@ -230,8 +231,8 @@ export function masterSignupUrl(origin: string, vessel: Vessel) {
   return `${origin}/signup?${q.toString()}`;
 }
 
-export async function sendApprovedNotice(opts: { to: string; officerName: string; vessel: Vessel; rank: Rank; origin: string }) {
-  const { to, officerName, vessel, rank, origin } = opts;
+export async function sendApprovedNotice(opts: { to: string; officerName: string; vessel: Vessel; rank: Rank; origin: string; rulesSent?: boolean }) {
+  const { to, officerName, vessel, rank, origin, rulesSent } = opts;
   const code = subjectCode(rank.code);
   const ship = vesselLabel(vessel);
   await new SmtpService().sendMail({
@@ -242,7 +243,9 @@ export async function sendApprovedNotice(opts: { to: string; officerName: string
       '',
       `The Master has approved you as ${rank.label} on ${ship}.`,
       '',
-      vessel.setup_completed_at
+      rulesSent
+        ? `The Master has been sent the Outlook rules for your rank. Once they are added, email ${vessel.master_email} from your onboard mailbox with "${code} TEST" in the subject. When the test comes back, put your module and code in the subject of every request, for example "A1 // ${code}".`
+        : vessel.setup_completed_at
         ? `From your onboard mailbox, email ${vessel.master_email} with "${code} TEST" in the subject once to check your rule. Then put your module and code in the subject of every request, for example "A1 // ${code}".`
         : `The Master still needs to finish the ship's email setup. You can see the status in your profile: ${origin}/dashboard`,
       '',
@@ -262,6 +265,81 @@ export async function sendRemovedNotice(opts: { to: string; officerName: string;
       `The Master has removed you as ${rank.label} on ${vesselLabel(vessel)}, so emails through that ship's mailbox are no longer answered for you.`,
       'Your M.A.T.E account, history and documents are unchanged. On your next ship, link again from your profile.'
     ].join('\n') + SIGN_OFF
+  });
+}
+
+/**
+ * The Outlook rules for one rank, emailed to the Master after approval, so no website is needed.
+ * The subject has no "MATE-", so the Master's own rule doesn't forward it.
+ */
+export async function sendRulesEmail(opts: { vessel: Vessel; rank: Rank; onboardEmail: string; officerName: string; firstRank: boolean }) {
+  const { vessel, rank, onboardEmail, officerName, firstRank } = opts;
+  const code = subjectCode(rank.code);
+  const inbox = mateInbox();
+  const ship = vesselLabel(vessel);
+  const rule1 = [
+    `Rule A (once per ship${firstRank ? '' : ', skip it if you already added it'}): "M.A.T.E questions out"`,
+    `  When: the subject includes  MATE-`,
+    `  Do: forward it to  ${inbox}`,
+    `  Except: if it is from  ${inbox}`
+  ];
+  const rule2 = [
+    `Rule B: "M.A.T.E answers to ${rank.label}"`,
+    `  When: it is from  ${inbox}  and the subject includes  ${code}`,
+    `  Do: forward it to  ${onboardEmail}`
+  ];
+  const classic = [
+    'Classic Outlook: File > Manage Rules & Alerts > New Rule > "Apply rule on messages I receive".',
+    'Tick the conditions, click each underlined word to enter the value, choose "forward it to people or public group", add the exception where listed, name the rule and Finish.'
+  ];
+  const newer = [
+    'New Outlook or Outlook on the web: Settings > Mail > Rules > Add new rule.',
+    'Name it, add the conditions and the action "Forward to", add the exception where listed, and Save.'
+  ];
+  const text = [
+    'Dear Captain,',
+    '',
+    `${officerName} (${rank.label}) is now verified on ${ship}. To pass their questions and answers through this mailbox, please add these Outlook rules on this computer.`,
+    '',
+    ...rule1, '',
+    ...rule2, '',
+    'How to add a rule:',
+    ...classic, ...newer,
+    '',
+    `When the rules are in place, ${officerName} will send one email with "${code} TEST" in the subject from ${onboardEmail}. M.A.T.E replies, and the rank is marked as working.`,
+    'The rules only forward emails that carry a M.A.T.E code. Nothing else in your mailbox is touched.'
+  ].join('\n') + SIGN_OFF;
+
+  const ruleHtml = (title: string, rows: [string, string][]) => `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 14px 0;border:1px solid #dcdad5;border-radius:6px;">
+<tr><td colspan="2" style="padding:10px 14px;font-weight:bold;font-size:14px;color:#1c2024;border-bottom:1px solid #e6e4df;">${esc(title)}</td></tr>
+${rows.map(([k, v]) => `<tr><td style="padding:6px 14px;width:90px;font-size:13px;color:#5b6575;vertical-align:top;">${esc(k)}</td><td style="padding:6px 14px;font-size:13px;color:#1c2024;">${v}</td></tr>`).join('')}
+</table>`;
+  const mono = (v: string) => `<code style="font-family:Consolas,monospace;background:#f3f2ef;padding:1px 5px;border-radius:3px;">${esc(v)}</code>`;
+  const html = emailHtml({
+    paragraphs: [
+      'Dear Captain,',
+      `${esc(officerName)} (${esc(rank.label)}) is now verified on ${esc(ship)}. To pass their questions and answers through this mailbox, please add these Outlook rules on this computer. It takes about five minutes.`,
+      ruleHtml(`Rule A: M.A.T.E questions out${firstRank ? ' (once per ship)' : ' (skip if already added)'}`, [
+        ['When', `the subject includes ${mono('MATE-')}`],
+        ['Do', `forward it to ${mono(inbox)}`],
+        ['Except', `if it is from ${mono(inbox)}`]
+      ]),
+      ruleHtml(`Rule B: M.A.T.E answers to ${rank.label}`, [
+        ['When', `it is from ${mono(inbox)} and the subject includes ${mono(code)}`],
+        ['Do', `forward it to ${mono(onboardEmail)}`]
+      ]),
+      `<b>Classic Outlook:</b> File &gt; Manage Rules &amp; Alerts &gt; New Rule &gt; "Apply rule on messages I receive". Tick the conditions, click each underlined word to enter the value, choose "forward it to people or public group", add the exception where listed, name the rule and Finish.`,
+      `<b>New Outlook or Outlook on the web:</b> Settings &gt; Mail &gt; Rules &gt; Add new rule. Name it, add the conditions and the action "Forward to", add the exception where listed, and Save.`,
+      `When the rules are in place, ${esc(officerName)} will send one email with ${mono(`${code} TEST`)} in the subject from ${esc(onboardEmail)}. M.A.T.E replies, and the rank is marked as working. The rules only forward emails that carry a M.A.T.E code; nothing else in your mailbox is touched.`
+    ]
+  });
+
+  await new SmtpService().sendMail({
+    to: vessel.master_email,
+    subject: `M.A.T.E: Outlook rules for ${rank.label} on ${ship}`,
+    text,
+    html,
+    replyTo: inbox
   });
 }
 

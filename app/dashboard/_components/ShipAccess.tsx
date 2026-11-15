@@ -154,6 +154,11 @@ export default function ShipAccess({ savedRank }: { savedRank?: string | null })
         No internet on your onboard mailbox? Link to your ship with the Master's address. The Master approves by email,
         then you email M.A.T.E through the Master's mailbox using the code <b className="text-foreground">{subjectCode(rank.code)}</b>.
       </p>
+      {!profile.vessel_email && (
+        <p className="text-xs text-amber-700 leading-relaxed">
+          Add your onboard mailbox as your interaction email above first. M.A.T.E uses it to send the Master the Outlook rules for your rank.
+        </p>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Field label="Master's email" htmlFor="sa-master">
           <input id="sa-master" type="email" className={inputClass} value={masterEmail} onChange={e => setMasterEmail(e.target.value)} placeholder="master@vessel.com" />
