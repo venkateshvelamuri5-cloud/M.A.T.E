@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../src/supabase-client';
 import { Profile, profileCompleteness, useOfficer } from '../_lib/officer';
 import { Button, Dialog, Field, Meter, SlotCode, inputClass } from '../_lib/ui';
-import { isListedRank, RANK_LABELS } from '../../../src/crew/ranks';
+import { isListedRank, RANK_LABELS, rankFromLabel } from '../../../src/crew/ranks';
 import ShipAccess from './ShipAccess';
 
 const EMAIL_CHANGE_DAYS = 15;
@@ -57,6 +57,19 @@ export default function ProfileDialog() {
     if (emailChanged && emailLocked) {
       toast(`You can change your interaction email again in ${Math.ceil(EMAIL_CHANGE_DAYS - daysSince)} day(s).`, 'error');
       return;
+    }
+    // The Captain's address belongs to the ship, not to one officer. Officers reach M.A.T.E through it with their rank code.
+    const newEmail = form.vessel_email.trim().toLowerCase();
+    if (emailChanged && newEmail && rankFromLabel(form.rank)?.code !== 'MS') {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(`/api/crew/link?masterAddress=${encodeURIComponent(newEmail)}`, { headers: { Authorization: `Bearer ${session?.access_token || ''}` } });
+        const json = await res.json().catch(() => ({}));
+        if (json.isMasterAddress) {
+          toast("That's the Captain's address, which all officers share. Leave this empty or use your own onboard mailbox, and link the ship under Ship email access below.", 'error');
+          return;
+        }
+      } catch { /* the check is a convenience; saving still works without it */ }
     }
     setSaving(true);
     try {
@@ -127,8 +140,8 @@ export default function ProfileDialog() {
           </div>
           <Field label="Interaction email" htmlFor="pf-vemail" hint={emailLocked
             ? `Changed recently. You can change it again in ${Math.ceil(EMAIL_CHANGE_DAYS - daysSince)} day(s).`
-            : `The ship's address you email M.A.T.E from. It can be changed once every ${EMAIL_CHANGE_DAYS} days.`}>
-            <input id="pf-vemail" type="email" className={inputClass} value={form.vessel_email} onChange={e => set('vessel_email', e.target.value)} placeholder="master@vessel.com" disabled={emailLocked} />
+            : `Your own onboard mailbox, if it can email M.A.T.E directly. Using the Captain's mailbox? Link the ship under Ship email access instead. It can be changed once every ${EMAIL_CHANGE_DAYS} days.`}>
+            <input id="pf-vemail" type="email" className={inputClass} value={form.vessel_email} onChange={e => set('vessel_email', e.target.value)} placeholder="ce@vessel.com" disabled={emailLocked} />
           </Field>
         </section>
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '../../../../src/supabase-client';
-import { rankByCode } from '../../../../src/crew/ranks';
+import { rankByCode, rankFromLabel } from '../../../../src/crew/ranks';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   const masterEmails = vessels.map(v => v.master_email);
   const [{ data: members }, { data: masters }] = await Promise.all([
     supabase.from('vessel_members').select('vessel_id, user_id, rank_code, status, created_at').in('vessel_id', ids).in('status', ['pending', 'active']),
-    supabase.from('profiles').select('id, full_name, vessel_email').in('vessel_email', masterEmails)
+    supabase.from('profiles').select('id, full_name, vessel_email, rank').in('vessel_email', masterEmails)
   ]);
   const userIds = Array.from(new Set((members || []).map(m => m.user_id)));
   const { data: people } = userIds.length
@@ -48,7 +48,8 @@ export async function GET(req: NextRequest) {
         status: m.status as 'pending' | 'active'
       };
     });
-    const masterProfile = (masters || []).find(p => p.vessel_email === v.master_email);
+    // Only a Master-rank account counts: officers sometimes enter the Captain's address as their own.
+    const masterProfile = (masters || []).find(p => p.vessel_email === v.master_email && rankFromLabel(p.rank)?.code === 'MS');
     const masterMember = (members || []).some(m => m.vessel_id === v.id && m.rank_code === 'MS' && m.status === 'active');
     const companies = Array.from(new Set(crew.map(c => c.company).filter(Boolean))) as string[];
     return {
