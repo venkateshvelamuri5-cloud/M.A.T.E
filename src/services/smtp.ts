@@ -10,6 +10,8 @@ export interface SendMailOptions {
   to: string;
   /** A hidden copy, for example the officer's own Gmail when the answer goes to the ship. */
   bcc?: string;
+  /** Where the recipient's Reply goes, when it should not be the sending address. */
+  replyTo?: string;
   subject: string;
   text: string;
   html?: string;
@@ -64,6 +66,7 @@ export class SmtpService {
         from: `"Agentic Assistant" <${fromAddress}>`,
         to: options.to,
         bcc: options.bcc,
+        replyTo: options.replyTo,
         subject: options.subject,
         text: options.text,
         html: options.html || `<p>${options.text.replace(/\n/g, '<br>')}</p>`,

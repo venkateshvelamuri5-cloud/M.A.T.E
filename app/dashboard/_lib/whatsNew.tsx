@@ -34,7 +34,7 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     title: 'Use M.A.T.E from your onboard mailbox',
     body: "No internet on your ship's intranet email? You can now send questions through the Master's mailbox and get answers back in your own onboard inbox.",
     points: [
-      "Link your account to your ship with the Master's email address. The Master approves with one click.",
+      "Link your account to your ship with the Master's email address. The Master approves by replying to one email, no website needed.",
       'Put your rank code in the subject, for example "A1 // MATE-CE". Answers come back to your onboard mailbox, with a copy to your Gmail.',
       'Rank is now chosen from a list. If your profile shows "(choose from the list)", please pick your rank again.'
     ],

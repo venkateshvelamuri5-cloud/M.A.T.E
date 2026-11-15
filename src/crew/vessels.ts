@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { supabase } from '../supabase-client';
-import { parseCrewSubject, Rank, RANKS, rankByCode, ROUTED_RANKS } from './ranks';
+import { parseCrewSubject, Rank, RANKS, rankByCode, rankFromLabel, ROUTED_RANKS } from './ranks';
 
 // Server-side helpers for ships, their rank mailboxes and the officers linked to them.
 // Only the server (service role) touches these tables.
@@ -193,13 +193,14 @@ export async function vesselStatus(vessel: Vessel): Promise<{ ranks: RankStatus[
   };
 }
 
-/** Whether the ship's Master already has a M.A.T.E account (by interaction email or as linked Master). */
+/** Whether the ship's Master already has a M.A.T.E account: a Master-rank account on that address, or a linked Master. */
 export async function masterOnMate(vessel: Vessel): Promise<boolean> {
   const [{ data: byEmail }, ms] = await Promise.all([
-    supabase.from('profiles').select('id').eq('vessel_email', vessel.master_email).limit(1),
+    supabase.from('profiles').select('rank').eq('vessel_email', vessel.master_email).limit(20),
     activeMember(vessel.id, 'MS')
   ]);
-  return !!(byEmail && byEmail.length) || !!ms;
+  // Officers sometimes enter the Captain's address as their own; that doesn't make the Captain a user.
+  return (byEmail || []).some(p => rankFromLabel(p.rank)?.code === 'MS') || !!ms;
 }
 
 export const vesselLabel = (v: Pick<Vessel, 'name'>) => (v.name ? `MV ${v.name}` : 'your vessel');

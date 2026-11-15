@@ -39,6 +39,13 @@ async function describe(member: VesselMember | null) {
 export async function GET(req: NextRequest) {
   const user = await userFromRequest(req);
   if (!user) return NextResponse.json({ error: 'Please sign in again.' }, { status: 401 });
+  // The profile asks whether an address is a ship's Master address before saving it as an interaction email.
+  const check = req.nextUrl.searchParams.get('masterAddress');
+  if (check !== null) {
+    const email = normalizeEmail(check);
+    const { data } = email ? await supabase.from('vessels').select('id').eq('master_email', email).limit(1) : { data: [] };
+    return NextResponse.json({ isMasterAddress: !!(data && data.length) });
+  }
   return NextResponse.json(await describe(await openMembership(user.id)));
 }
 

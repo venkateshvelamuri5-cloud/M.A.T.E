@@ -32,10 +32,10 @@ export async function call(method: 'GET' | 'POST' | 'DELETE', body?: unknown) {
 /** Where the officer's ship link stands, in one line. Shared by the profile and the home card. */
 export function StatusLine({ link }: { link: Link }) {
   const cls = 'flex items-start gap-2';
-  if (link.status === 'pending') return <p className={`${cls} text-amber-700`}><Clock className="w-4 h-4 mt-0.5 shrink-0" />Pending. Waiting for the Master to approve. They were emailed a link.</p>;
-  if (!link.setupComplete) return <p className={`${cls} text-amber-700`}><Clock className="w-4 h-4 mt-0.5 shrink-0" />Approved. Waiting for the Master to finish the ship's email setup.</p>;
+  if (link.status === 'pending') return <p className={`${cls} text-amber-700`}><Clock className="w-4 h-4 mt-0.5 shrink-0" />Pending. Waiting for the Master to verify you. They were emailed an Approve button that works without web access.</p>;
+  if (!link.setupComplete) return <p className={`${cls} text-amber-700`}><Clock className="w-4 h-4 mt-0.5 shrink-0" />Verified by the Master. Waiting for the ship's email setup to finish.</p>;
   if (link.ruleWorking) return <p className={`${cls} text-emerald-700`}><CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />Ready. Your rank's forwarding rule has been tested.</p>;
-  return <p className={`${cls} text-amber-700`}><AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />Approved and set up. Send one email with the subject “{link.subjectCode} TEST” to check your rule.</p>;
+  return <p className={`${cls} text-amber-700`}><AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />Verified and set up. Send one email with the subject “{link.subjectCode} TEST” to check your rule.</p>;
 }
 
 /** Dashboard home: the officer's ship email status at a glance. Hidden when they haven't linked a ship. */
@@ -154,6 +154,11 @@ export default function ShipAccess({ savedRank }: { savedRank?: string | null })
         No internet on your onboard mailbox? Link to your ship with the Master's address. The Master approves by email,
         then you email M.A.T.E through the Master's mailbox using the code <b className="text-foreground">{subjectCode(rank.code)}</b>.
       </p>
+      {!profile.vessel_email && (
+        <p className="text-xs text-amber-700 leading-relaxed">
+          Add your onboard mailbox as your interaction email above first. M.A.T.E uses it to send the Master the Outlook rules for your rank.
+        </p>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Field label="Master's email" htmlFor="sa-master">
           <input id="sa-master" type="email" className={inputClass} value={masterEmail} onChange={e => setMasterEmail(e.target.value)} placeholder="master@vessel.com" />
