@@ -173,6 +173,10 @@ export default function ShipAccess({ savedRank }: { savedRank?: string | null })
       <Button variant="primary" size="sm" onClick={() => linkShip()} disabled={busy || !/\S+@\S+\.\S+/.test(masterEmail)}>
         {busy ? 'Linking…' : `Link as ${rank.label}`}
       </Button>
+      <p className="text-xs text-muted-foreground leading-relaxed">
+        On board without web access? From your onboard mailbox, email the Master's address with the subject <b className="text-foreground">MATE-JOIN</b> and
+        your M.A.T.E sign-in email in the body. If the ship's rules aren't set up yet, ask the Master to forward it to mate@logmark-ai.com.
+      </p>
     </div>
   );
 }

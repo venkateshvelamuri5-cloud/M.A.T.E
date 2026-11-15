@@ -343,6 +343,43 @@ ${rows.map(([k, v]) => `<tr><td style="padding:6px 14px;width:90px;font-size:13p
   });
 }
 
+/** Explains MATE-JOIN when M.A.T.E couldn't act on one. Sent to the address it came from; no "MATE-" in the subject. */
+export async function sendJoinHelp(opts: { to: string; reason: 'not-found' | 'own-address' }) {
+  const paras = opts.reason === 'own-address'
+    ? [
+      'We received a request to join a ship from a personal M.A.T.E sign-in address.',
+      "Joining by email works from the ship: the officer emails the Captain's address from their onboard mailbox, and the Captain forwards it to " + mateInbox() + '. If you have web access, you can link the ship from your M.A.T.E profile instead.'
+    ]
+    : [
+      'We received a request to join this ship on M.A.T.E, but could not find whose it is.',
+      'Please ask the officer to write their M.A.T.E sign-in email (their personal Gmail) in the body, keep "MATE-JOIN" in the subject, and send it again. They need a M.A.T.E account with their rank and onboard mailbox in their profile.'
+    ];
+  await new SmtpService().sendMail({
+    to: opts.to,
+    subject: 'M.A.T.E: ship join request not completed',
+    text: ['Hello,', '', ...paras.flatMap(x => [x, ''])].join('\n') + SIGN_OFF,
+    html: emailHtml({ paragraphs: ['Hello,', ...paras.map(esc)] }),
+    replyTo: mateInbox()
+  });
+}
+
+/** Tells the officer, at their sign-in address, what happened to their emailed join request. */
+export async function sendJoinReceived(opts: {
+  to: string; officerName: string; masterEmail: string; outcome: 'requested' | 'already' | 'failed'; error?: string;
+}) {
+  const { to, officerName, masterEmail, outcome, error } = opts;
+  const line = outcome === 'requested'
+    ? `We received your request to join the ship through ${masterEmail}. The Captain has been emailed an Approve button. You'll hear from us as soon as they approve.`
+    : outcome === 'already'
+    ? `You're already linked to the ship through ${masterEmail}. Nothing has changed.`
+    : `We couldn't link you to the ship through ${masterEmail}: ${error || 'something went wrong'}.`;
+  await new SmtpService().sendMail({
+    to,
+    subject: outcome === 'failed' ? 'Ship email request not completed' : 'Ship email request received',
+    text: [`Hello ${officerName},`, '', line].join('\n') + SIGN_OFF
+  });
+}
+
 export async function sendWelcome(vessel: Vessel, rank: Rank, origin: string) {
   const code = subjectCode(rank.code);
   const ship = vesselLabel(vessel);

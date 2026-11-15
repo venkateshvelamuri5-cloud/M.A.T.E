@@ -12,6 +12,7 @@ import { sendNotLinked, sendTestReply } from '../../../../src/crew/emails';
 import { rankFromLabel } from '../../../../src/crew/ranks';
 import { siteOrigin } from '../../../../src/crew/origin';
 import { handleApprovalReply } from '../../../../src/crew/approval';
+import { handleJoinEmail } from '../../../../src/crew/link';
 
 /**
  * POST handler for Hostinger Webhook
@@ -160,6 +161,15 @@ export async function POST(req: NextRequest) {
     }
 
     // A Master replying APPROVE to an approval request, for ships whose computers can't open the site.
+    // An officer asking to join the ship by email ("MATE-JOIN"), passed on by the Captain's mailbox.
+    try {
+      if (await handleJoinEmail({ from, subject, body: bodyText, origin: siteOrigin(req) })) {
+        return NextResponse.json({ success: true, message: 'Handled ship join request' });
+      }
+    } catch (joinErr) {
+      console.warn('Join request handling failed, treating as a normal email:', (joinErr as Error).message);
+    }
+
     try {
       if (await handleApprovalReply({ from, subject, body: bodyText, origin: siteOrigin(req) })) {
         return NextResponse.json({ success: true, message: 'Handled Master approval reply' });
