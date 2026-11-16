@@ -911,12 +911,15 @@ Mariner Profile:
         slotCode = agentData?.slot_code;
       }
       
-      if (slotCode === 'A3') {
-        const filler = new FormFillerService();
-        const result = await filler.processAutocomplete(userId, selectedAgentId!, scrubbedText, gemini);
-        processedResult = result.text;
-        if (result.attachment) {
-          a3Attachment = result.attachment;
+      // A3 fills the officer's own blank Word form when they have one; otherwise it answers as usual.
+      const formResult = slotCode === 'A3' && userId
+        ? await new FormFillerService().processAutocomplete(userId, selectedAgentId!, scrubbedText, gemini, selectedAgentPrompt)
+        : null;
+
+      if (formResult) {
+        processedResult = formResult.text;
+        if (formResult.attachment) {
+          a3Attachment = formResult.attachment;
         }
       } else {
         processedResult = await gemini.runGroundedQuery(
