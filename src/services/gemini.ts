@@ -54,6 +54,19 @@ const INCOMPLETE_NOTICE = '\n\n[Notice: This answer reached the maximum length M
 // How many extra requests a reply that hit the output limit may use to finish.
 const MAX_CONTINUATIONS = 3;
 
+/**
+ * Removes a model's thinking when it comes inside the answer text as <think>…</think>: a finished block,
+ * an unfinished one (the limit cut it off), or only a closing tag when the opening one was left out.
+ */
+export function stripThinking(text: string): string {
+  let out = text.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '');
+  const close = out.search(/<\/think(?:ing)?>/i);
+  if (close !== -1) out = out.slice(out.indexOf('>', close) + 1);
+  const open = out.search(/<think(?:ing)?>/i);
+  if (open !== -1) out = out.slice(0, open);
+  return out.replace(/^\s+/, '');
+}
+
 type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
 /**
@@ -73,6 +86,7 @@ async function completeWithContinuation(
       ? messages
       : [...messages, { role: 'assistant' as const, content: text }, { role: 'user' as const, content: CONTINUE_PROMPT }];
     const res = await call(turn, round);
+    res.content = stripThinking(res.content);
     text += res.content;
     finishReason = res.finishReason;
     console.log(`[LLM Router] ${label} round ${round + 1}: ${res.content.length} chars, finish_reason=${finishReason || 'n/a'}`);
@@ -354,7 +368,7 @@ ${query}
             console.log(`[LLM Router] Sarvam usage: prompt=${data.usage.prompt_tokens} completion=${data.usage.completion_tokens} total=${data.usage.total_tokens}`);
           }
           const choice = data.choices?.[0] || {};
-          const content = typeof choice.message?.content === 'string' ? choice.message.content : '';
+          const content = stripThinking(typeof choice.message?.content === 'string' ? choice.message.content : '');
           const finishReason = choice.finish_reason || '';
           if (!content.trim()) {
             console.warn(`[LLM Router] Sarvam AI returned no answer text (thinking=${thinking}, finish_reason=${finishReason}). Raw payload:`, JSON.stringify(data).slice(0, 2000));
