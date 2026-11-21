@@ -125,7 +125,8 @@ export async function approveMember(member: VesselMember, vessel: Vessel, origin
   }
 
   // Tell the officer at their sign-in address. A failed email doesn't undo the approval.
-  if (officer?.email && rank) {
+  // Not for the Master confirming their own ship: the rules email already tells them.
+  if (officer?.email && rank && rank.code !== 'MS') {
     try {
       await sendApprovedNotice({ to: officer.email, officerName: officer.full_name || 'there', vessel: updated, rank, origin, rulesSent, onboardMissing });
     } catch (mailErr) {
@@ -174,6 +175,8 @@ export async function handleApprovalReply(opts: { from: string; subject: string;
     return true;
   }
   const result = await approveMember(member, vessel, opts.origin);
+  // The rules email opens with the confirmation, so the Captain gets one email, not two.
+  if (result.ok && !result.alreadyActive && result.rulesSent) return true;
   await sendReplyApprovalResult({
     vessel, officerName, rankLabel, ref: ref10, origin: opts.origin,
     outcome: result.ok ? (result.alreadyActive ? 'already' : 'approved') : 'failed',
