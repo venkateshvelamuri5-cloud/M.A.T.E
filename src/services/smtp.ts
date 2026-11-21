@@ -63,7 +63,7 @@ export class SmtpService {
 
     try {
       const info = await this.transporter.sendMail({
-        from: `"Agentic Assistant" <${fromAddress}>`,
+        from: `"M.A.T.E" <${fromAddress}>`,
         to: options.to,
         bcc: options.bcc,
         replyTo: options.replyTo,
