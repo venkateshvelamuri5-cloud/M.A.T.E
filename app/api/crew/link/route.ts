@@ -4,7 +4,7 @@ import { userFromRequest } from '../../../../src/services/limits';
 import { rankByCode, rankFromLabel, subjectCode } from '../../../../src/crew/ranks';
 import {
   endMembership, getOrCreateVessel, isEmail, isOwnAddress, newToken, normalizeEmail, openMembership,
-  masterOnMate, vesselById, VesselMember, vesselRanks
+  masterOnMate, vesselById, VesselMember, vesselRanks, vesselStatus
 } from '../../../../src/crew/vessels';
 import { sendApprovalRequest } from '../../../../src/crew/emails';
 import { siteOrigin } from '../../../../src/crew/origin';
@@ -20,7 +20,15 @@ async function describe(member: VesselMember | null) {
   const vessel = await vesselById(member.vessel_id);
   if (!vessel) return { link: null };
   const rank = rankByCode(member.rank_code);
-  const row = (await vesselRanks(vessel.id)).find(r => r.rank_code === member.rank_code);
+  const ranks = await vesselRanks(vessel.id);
+  const row = ranks.find(r => r.rank_code === member.rank_code);
+  const isMaster = member.rank_code === 'MS';
+  // A TEST email that came back means the outbound rule on the Master's Outlook works too.
+  const outboundTested = ranks.some(r => !!r.test_passed_at);
+  // The Master sees each rank's progress, since the rules live on the Master's computer.
+  const crew = isMaster && member.status === 'active'
+    ? (await vesselStatus(vessel)).ranks.map(r => ({ code: r.code, label: r.label, officer: r.officer, testPassed: r.testPassed }))
+    : undefined;
   return {
     link: {
       status: member.status,
@@ -30,7 +38,10 @@ async function describe(member: VesselMember | null) {
       vesselName: vessel.name,
       masterEmail: vessel.master_email,
       setupComplete: !!vessel.setup_completed_at,
-      ruleWorking: member.rank_code === 'MS' || !!row?.test_passed_at,
+      ruleWorking: !!row?.test_passed_at,
+      isMaster,
+      outboundTested,
+      crew,
       requestedAt: member.created_at
     }
   };
