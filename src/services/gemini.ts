@@ -49,6 +49,56 @@ function fitContextToBudget(context: string, budgetTokens: number, keywords: str
   return result;
 }
 
+const CONTINUE_PROMPT = 'Your previous reply was cut off by the length limit. Continue exactly where it stopped. Do not repeat anything already written and do not add a preamble.';
+const INCOMPLETE_NOTICE = '\n\n[Notice: This answer reached the maximum length M.A.T.E allows and may be incomplete. Ask for the remaining sections in a follow-up request.]';
+// How many extra requests a reply that hit the output limit may use to finish.
+const MAX_CONTINUATIONS = 3;
+
+/**
+ * Removes a model's thinking when it comes inside the answer text as <think>…</think>: a finished block,
+ * an unfinished one (the limit cut it off), or only a closing tag when the opening one was left out.
+ */
+export function stripThinking(text: string): string {
+  let out = text.replace(/<think(?:ing)?>[\s\S]*?<\/think(?:ing)?>/gi, '');
+  const close = out.search(/<\/think(?:ing)?>/i);
+  if (close !== -1) out = out.slice(out.indexOf('>', close) + 1);
+  const open = out.search(/<think(?:ing)?>/i);
+  if (open !== -1) out = out.slice(0, open);
+  return out.replace(/^\s+/, '');
+}
+
+type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+
+/**
+ * Runs an OpenAI-style chat request and, when the model stops because it ran out of output tokens
+ * (finish_reason "length"), asks it to carry on from where it stopped, so long answers such as
+ * risk assessments are not sent out cut off mid-sentence.
+ */
+async function completeWithContinuation(
+  label: string,
+  messages: ChatMessage[],
+  call: (messages: ChatMessage[], round: number) => Promise<{ content: string; finishReason: string }>
+): Promise<{ text: string; finishReason: string }> {
+  let text = '';
+  let finishReason = '';
+  for (let round = 0; round <= MAX_CONTINUATIONS; round++) {
+    const turn = round === 0
+      ? messages
+      : [...messages, { role: 'assistant' as const, content: text }, { role: 'user' as const, content: CONTINUE_PROMPT }];
+    const res = await call(turn, round);
+    res.content = stripThinking(res.content);
+    text += res.content;
+    finishReason = res.finishReason;
+    console.log(`[LLM Router] ${label} round ${round + 1}: ${res.content.length} chars, finish_reason=${finishReason || 'n/a'}`);
+    if (finishReason !== 'length' || !res.content) break;
+  }
+  if (finishReason === 'length') {
+    console.warn(`[LLM Router] ${label} still hit the output limit after ${MAX_CONTINUATIONS} continuations.`);
+    text += INCOMPLETE_NOTICE;
+  }
+  return { text: text.trim(), finishReason };
+}
+
 /**
  * Gemini Service Class
  * Integrates multiple LLM providers (Groq Llama 3.3, Google Gemini, OpenAI, Claude, Perplexity)
@@ -198,84 +248,78 @@ ${query}
       const normalizedProvider = (llmProvider || 'groq').toLowerCase();
       console.log(`[LLM Router] Grounding query using engine provider: ${normalizedProvider}`);
 
+      const baseMessages: ChatMessage[] = [
+        { role: 'system', content: activeSystemPrompt },
+        { role: 'user', content: userMessage }
+      ];
+
       if (normalizedProvider === 'gemini') {
         const geminiModel = 'gemini-3.5-flash-lite';
         console.log(`[LLM Router] Routing to Gemini model: ${geminiModel}`);
 
-        const response = await this.ai.models.generateContent({
-          model: geminiModel,
-          contents: [{ role: 'user', parts: [{ text: userMessage }] }],
-          config: { systemInstruction: activeSystemPrompt }
+        const { text } = await completeWithContinuation('Gemini', baseMessages, async (messages) => {
+          const response = await this.ai.models.generateContent({
+            model: geminiModel,
+            contents: messages.filter(m => m.role !== 'system').map(m => ({
+              role: m.role === 'assistant' ? 'model' : 'user',
+              parts: [{ text: m.content }]
+            })),
+            config: {
+              systemInstruction: activeSystemPrompt,
+              maxOutputTokens: Number(process.env.GEMINI_MAX_OUTPUT_TOKENS) || 65536
+            }
+          });
+          const reason = String(response.candidates?.[0]?.finishReason || '');
+          return { content: response.text || '', finishReason: reason === 'MAX_TOKENS' ? 'length' : reason };
         });
-        return response.text?.trim() || 'No response generated from Gemini.';
-      } else if (normalizedProvider === 'openai') {
-        const openaiModel = 'gpt-4o-mini';
-        console.log(`[LLM Router] Routing to OpenAI model: ${openaiModel}`);
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-          },
-          body: JSON.stringify({
-            model: openaiModel,
-            messages: [
-              { role: 'system', content: activeSystemPrompt },
-              { role: 'user', content: userMessage }
-            ]
-          })
+        return text || 'No response generated from Gemini.';
+
+      } else if (normalizedProvider === 'openai' || normalizedProvider === 'perplexity') {
+        const isOpenAI = normalizedProvider === 'openai';
+        const model = isOpenAI ? 'gpt-4o-mini' : 'sonar';
+        const url = isOpenAI ? 'https://api.openai.com/v1/chat/completions' : 'https://api.perplexity.ai/chat/completions';
+        const key = isOpenAI ? process.env.OPENAI_API_KEY : process.env.PERPLEXITY_API_KEY;
+        console.log(`[LLM Router] Routing to ${isOpenAI ? 'OpenAI' : 'Perplexity'} model: ${model}`);
+
+        const { text } = await completeWithContinuation(isOpenAI ? 'OpenAI' : 'Perplexity', baseMessages, async (messages) => {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+            body: JSON.stringify({ model, messages })
+          });
+          const data = await response.json();
+          if (data.error) {
+            throw new Error(data.error.message || JSON.stringify(data.error));
+          }
+          return { content: data.choices?.[0]?.message?.content || '', finishReason: data.choices?.[0]?.finish_reason || '' };
         });
-        const data = await response.json();
-        if (data.error) {
-          throw new Error(data.error.message || JSON.stringify(data.error));
-        }
-        return data.choices[0]?.message?.content?.trim() || 'No response generated from OpenAI.';
+        return text || `No response generated from ${isOpenAI ? 'OpenAI' : 'Perplexity'}.`;
 
       } else if (normalizedProvider === 'claude') {
         const claudeModel = 'claude-3-5-sonnet-20241022';
         console.log(`[LLM Router] Routing to Anthropic Claude model: ${claudeModel}`);
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': `${process.env.CLAUDE_API_KEY}`,
-            'anthropic-version': '2023-06-01'
-          },
-          body: JSON.stringify({
-            model: claudeModel,
-            max_tokens: 4000,
-            system: activeSystemPrompt,
-            messages: [{ role: 'user', content: userMessage }]
-          })
+        const { text } = await completeWithContinuation('Claude', baseMessages, async (messages) => {
+          const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': `${process.env.CLAUDE_API_KEY}`,
+              'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+              model: claudeModel,
+              max_tokens: 8192,
+              system: activeSystemPrompt,
+              messages: messages.filter(m => m.role !== 'system')
+            })
+          });
+          const data = await response.json();
+          if (data.error) {
+            throw new Error(data.error.message || JSON.stringify(data.error));
+          }
+          return { content: data.content?.[0]?.text || '', finishReason: data.stop_reason === 'max_tokens' ? 'length' : (data.stop_reason || '') };
         });
-        const data = await response.json();
-        if (data.error) {
-          throw new Error(data.error.message || JSON.stringify(data.error));
-        }
-        return data.content[0]?.text?.trim() || 'No response generated from Claude.';
-
-      } else if (normalizedProvider === 'perplexity') {
-        const perplexityModel = 'sonar';
-        console.log(`[LLM Router] Routing to Perplexity model: ${perplexityModel}`);
-        const response = await fetch('https://api.perplexity.ai/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.PERPLEXITY_API_KEY}`
-          },
-          body: JSON.stringify({
-            model: perplexityModel,
-            messages: [
-              { role: 'system', content: activeSystemPrompt },
-              { role: 'user', content: userMessage }
-            ]
-          })
-        });
-        const data = await response.json();
-        if (data.error) {
-          throw new Error(data.error.message || JSON.stringify(data.error));
-        }
-        return data.choices[0]?.message?.content?.trim() || 'No response generated from Perplexity.';
+        return text || 'No response generated from Claude.';
 
       } else if (normalizedProvider === 'sarvam') {
         const sarvamModel = 'sarvam-105b';
@@ -286,7 +330,11 @@ ${query}
         // Trim lower-priority documents to fit instead of dropping all grounding context.
         // Thinking and the answer share this limit. With 8,192 and the default thinking level, long agent
         // instructions used every token on thinking and the answer came back empty (finish_reason "length").
+        // The answer always gets at least this much room: documents are trimmed to leave it free.
         const sarvamMaxTokens = Number(process.env.SARVAM_MAX_TOKENS) || 16384;
+        // On top of that, the answer may use whatever the window has left after the prompt, up to this cap,
+        // so a long request never shrinks the room left for the answer to the fixed minimum.
+        const sarvamOutputCap = Number(process.env.SARVAM_MAX_OUTPUT_TOKENS) || 64000;
         const sarvamEffort = process.env.SARVAM_REASONING_EFFORT || 'low';
         const sarvamContextTokens = 128000;
         const promptOverheadTokens = estimateTokens(activeSystemPrompt) + estimateTokens(buildUserMessage('')) + 1000;
@@ -297,10 +345,15 @@ ${query}
           finalUserMessage = buildUserMessage(fitContextToBudget(fullReferenceContext, contextBudgetTokens, keywords));
         }
 
-        // An empty reply is retried once with thinking turned off, so the whole limit goes to the answer.
-        // If that is empty too the run fails (and is refunded) instead of saving an answer that says nothing.
-        let finishReason = '';
-        for (let attempt = 1; attempt <= 2; attempt++) {
+        // Prompt size is estimated from characters, so leave 10% (and at least 2,000 tokens) of headroom.
+        const outputTokensFor = (messages: ChatMessage[]) => {
+          const promptTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content) + 8, 0);
+          const room = sarvamContextTokens - Math.ceil(promptTokens * 1.1) - 2000;
+          return Math.max(sarvamMaxTokens, Math.min(sarvamOutputCap, room));
+        };
+
+        const callSarvam = async (messages: ChatMessage[], thinking: boolean, maxTokens = outputTokensFor(messages)): Promise<{ content: string; finishReason: string }> => {
+          console.log(`[LLM Router] Sarvam max_tokens=${maxTokens} (thinking=${thinking})`);
           const response = await fetch('https://api.sarvam.ai/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -309,52 +362,70 @@ ${query}
             },
             body: JSON.stringify({
               model: sarvamModel,
-              max_tokens: sarvamMaxTokens,
-              reasoning_effort: attempt === 1 ? sarvamEffort : null,
+              max_tokens: maxTokens,
+              reasoning_effort: thinking ? sarvamEffort : null,
               temperature: 0.7,
-              messages: [
-                { role: 'system', content: activeSystemPrompt },
-                { role: 'user', content: finalUserMessage }
-              ]
+              messages
             })
           });
           if (!response.ok) {
             const errText = await response.text();
+            // If Sarvam won't accept the larger limit, ask again with the minimum instead of failing the run.
+            if (response.status === 400 && maxTokens > sarvamMaxTokens && /token|length|context/i.test(errText)) {
+              console.warn(`[LLM Router] Sarvam refused max_tokens=${maxTokens}, retrying with ${sarvamMaxTokens}: ${errText.slice(0, 300)}`);
+              return callSarvam(messages, thinking, sarvamMaxTokens);
+            }
             throw new Error(`Sarvam AI API error (Status ${response.status}): ${errText}`);
           }
           const data = await response.json();
           if (data.error) {
             throw new Error(data.error.message || JSON.stringify(data.error));
           }
-
           if (data.usage) {
             console.log(`[LLM Router] Sarvam usage: prompt=${data.usage.prompt_tokens} completion=${data.usage.completion_tokens} total=${data.usage.total_tokens}`);
           }
-
           const choice = data.choices?.[0] || {};
-          const messageObj = choice.message || {};
-          const content = (typeof messageObj.content === 'string' ? messageObj.content : '').trim();
-          const reasoning = (messageObj.reasoning_content || messageObj.reasoning || '').trim();
-          finishReason = choice.finish_reason || '';
+          const content = stripThinking(typeof choice.message?.content === 'string' ? choice.message.content : '');
+          const finishReason = choice.finish_reason || '';
+          if (!content.trim()) {
+            console.warn(`[LLM Router] Sarvam AI returned no answer text (thinking=${thinking}, finish_reason=${finishReason}). Raw payload:`, JSON.stringify(data).slice(0, 2000));
+          }
+          return { content, finishReason };
+        };
 
-          // If content is null (because it hit length limit while reasoning), return reasoning
-          if (content || reasoning) return content || reasoning;
-          console.warn(`[LLM Router] Sarvam AI returned an empty response (attempt ${attempt}, finish_reason=${finishReason}). Raw payload:`, JSON.stringify(data).slice(0, 2000));
+        const sarvamMessages: ChatMessage[] = [
+          { role: 'system', content: activeSystemPrompt },
+          { role: 'user', content: finalUserMessage }
+        ];
+
+        // The first request thinks first. If thinking used the whole limit and no answer came back, ask again
+        // with thinking off so the whole limit goes to the answer. The model's unfinished thinking is never
+        // sent out as the answer: it reads as a reply that stops mid-sentence.
+        // Continuations (when the answer itself hits the limit) skip thinking too.
+        let usedThinking = true;
+        const { text } = await completeWithContinuation('Sarvam', sarvamMessages, async (messages, round) => {
+          if (round === 0) {
+            const first = await callSarvam(messages, true);
+            if (first.content.trim()) return first;
+            usedThinking = false;
+            return callSarvam(messages, false);
+          }
+          return callSarvam(messages, false);
+        });
+        if (!text) {
+          throw new Error(`Sarvam AI returned an empty response${usedThinking ? '' : ' twice'}.`);
         }
-        throw new Error(`Sarvam AI returned an empty response twice${finishReason ? ` (finish_reason: ${finishReason})` : ''}.`);
+        return text;
 
       } else {
-        // Fallback or explicit 'groq'
-        const targetModel = 'llama-3.1-70b-versatile';
+        // Fallback or explicit 'groq'. llama-3.1-70b-versatile was retired by Groq.
+        const targetModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
         console.log(`[LLM Router] Routing to Groq model: ${targetModel}`);
-        const response = await this.groq.chat.completions.create({
-          model: targetModel,
-          messages: [
-            { role: 'system', content: activeSystemPrompt },
-            { role: 'user', content: userMessage }
-          ]
+        const { text } = await completeWithContinuation('Groq', baseMessages, async (messages) => {
+          const response = await this.groq.chat.completions.create({ model: targetModel, messages });
+          return { content: response.choices[0]?.message?.content || '', finishReason: response.choices[0]?.finish_reason || '' };
         });
-        return response.choices[0]?.message?.content?.trim() || 'No response generated.';
+        return text || 'No response generated.';
       }
     } catch (error) {
       console.error('Error calling LLM for grounded query:', error);

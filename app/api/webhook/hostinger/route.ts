@@ -4,7 +4,6 @@ import { GeminiService } from '../../../../src/services/gemini';
 import { GeneratorService } from '../../../../src/services/generator';
 import { SmtpService } from '../../../../src/services/smtp';
 import { FileProcessor } from '../../../../src/services/fileProcessor';
-import { FormFillerService } from '../../../../src/services/formFiller';
 import { buildRetrievedContext, classifyDocument, contextBudgetFor, RetrievalFile } from '../../../../src/services/documents/retrieval';
 import { analystIds, consumeRun, limitMessage } from '../../../../src/services/limits';
 import { CrewSender, isOwnAddress, markTestPassed, resolveCrewSender } from '../../../../src/crew/vessels';
@@ -12,6 +11,11 @@ import { sendNotLinked, sendTestReply } from '../../../../src/crew/emails';
 import { rankFromLabel } from '../../../../src/crew/ranks';
 import { siteOrigin } from '../../../../src/crew/origin';
 import { handleApprovalReply } from '../../../../src/crew/approval';
+import { buildQueryForAgent } from '../../../dashboard/_lib/modules';
+
+export const dynamic = 'force-dynamic';
+// Same limit as web runs: slow models and long answers (which may need continuation requests) take time.
+export const maxDuration = 300;
 
 /**
  * POST handler for Hostinger Webhook
@@ -414,11 +418,17 @@ export async function POST(req: NextRequest) {
           .eq('email_request', bodyText.trim())
           .eq('status', 'Completed')
           .not('email_response', 'is', null)
+          // Like web runs, only reuse an answer from the last 24 hours.
+          .gt('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        if (duplicateLog && duplicateLog.email_response) {
+        // Never resend a reply that wasn't an answer: the old A3 form-filler messages, or an answer
+        // that ran out of length.
+        const notAnAnswer = /^(No templates found|Missing Blank template|Failed to autocomplete form|No response generated)/.test(duplicateLog?.email_response || '')
+          || (duplicateLog?.email_response || '').includes('reached the maximum length M.A.T.E allows');
+        if (duplicateLog && duplicateLog.email_response && !notAnAnswer) {
           console.log(`[DUPLICATE] Exact request subject & body match found. Resending cached response from interaction: ${duplicateLog.id}`);
           
           // Wrap and format output response HTML
@@ -460,7 +470,6 @@ export async function POST(req: NextRequest) {
     const scrubbedText = await gemini.cleanAndScrubText(bodyText);
 
     let processedResult = scrubbedText;
-    let a3Attachment: any = undefined;
     let fileReferenceContext = '';
     const pdfAttachments: Array<{ data: Buffer; mimeType: string; name?: string }> = [];
 
@@ -469,6 +478,7 @@ export async function POST(req: NextRequest) {
     let agentConfigSendAttachment = false;
     let routingLayer = 'fallback';
     let selectedAgentLlmProvider = 'groq';
+    let selectedAgent: any = null;
 
     try {
       const { data: allAgents } = await supabase
@@ -518,6 +528,7 @@ export async function POST(req: NextRequest) {
         }
 
         if (matchedAgent) {
+          selectedAgent = matchedAgent;
           selectedAgentPrompt = matchedAgent.system_prompt;
           selectedAgentId = matchedAgent.id;
           agentConfigSendAttachment = matchedAgent.send_attachment || false;
@@ -904,30 +915,18 @@ Mariner Profile:
         }
       }
 
-      // === FEATURE 2: A3 Autocomplete Logic ===
-      let slotCode = null;
-      if (selectedAgentId) {
-        const { data: agentData } = await supabase.from('agents').select('slot_code').eq('id', selectedAgentId).maybeSingle();
-        slotCode = agentData?.slot_code;
-      }
-      
-      if (slotCode === 'A3') {
-        const filler = new FormFillerService();
-        const result = await filler.processAutocomplete(userId, selectedAgentId!, scrubbedText, gemini);
-        processedResult = result.text;
-        if (result.attachment) {
-          a3Attachment = result.attachment;
-        }
-      } else {
-        processedResult = await gemini.runGroundedQuery(
-          scrubbedText, 
-          `${marinerProfilePrompt}\n\n${fileReferenceContext}`,
-          pdfAttachments,
-          selectedAgentPrompt,
-          selectedAgentLlmProvider,
-          selectedAgentId || undefined
-        );
-      }
+      // Every module, A3 included, runs the same way as on the web: the agent's instructions are wrapped
+      // around the officer's words, and the agent's own model answers. (A3 used to be sent to an old
+      // form-filling step that needed uploaded templates, so email replies for it had no drill notes.)
+      const queryForAgent = selectedAgent ? buildQueryForAgent(selectedAgent, scrubbedText, '') : scrubbedText;
+      processedResult = await gemini.runGroundedQuery(
+        queryForAgent,
+        `${marinerProfilePrompt}\n\n${fileReferenceContext}`,
+        pdfAttachments,
+        selectedAgentPrompt,
+        selectedAgentLlmProvider,
+        selectedAgentId || undefined
+      );
 
       if (processedResult) {
         processedResult = processedResult.replace(/gemini/gi, 'Generic AI');
@@ -1011,10 +1010,6 @@ Mariner Profile:
 
     // Format output spacing and markup structure to styled HTML
     const formattedHtml = wrapInEmailTemplate(formatMarkdownToHtml(processedResult), senderRank, senderName, vesselName, queryRef);
-
-    if (a3Attachment) {
-      emailAttachments.push(a3Attachment);
-    }
 
     // 6. Send Outbound SMTP Email response back
     const mailResponse = await smtp.sendMail({
@@ -1158,29 +1153,80 @@ Mariner Profile:
 }
 
 // Spacing, layout and formatting helper functions for outbound email text content
-function formatMarkdownToHtml(markdown: string): string {
-  let html = markdown
-    .replace(/^### (.*$)/gim, '<h3 style="font-family: \'Fraunces\', Georgia, serif; color: #0a1826; font-size: 16px; font-weight: bold; margin-top: 20px; margin-bottom: 8px;">$1</h3>')
-    .replace(/^## (.*$)/gim, '<h2 style="font-family: \'Fraunces\', Georgia, serif; color: #0a1826; font-size: 18px; font-weight: bold; margin-top: 24px; margin-bottom: 10px;">$1</h2>')
-    .replace(/^# (.*$)/gim, '<h1 style="font-family: \'Fraunces\', Georgia, serif; color: #0a1826; font-size: 22px; font-weight: bold; margin-top: 28px; margin-bottom: 12px;">$1</h1>')
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/^\s*[\*\-]\s+(.*$)/gim, '<li style="margin-bottom: 6px;">$1</li>');
+const escapeHtml = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const inline = (text: string) => text
+  .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  .replace(/(^|[^*\w])\*(?!\s)(.+?)\*(?!\w)/g, '$1<em>$2</em>');
 
-  html = html.replace(/(<li[\s\S]*?>[\s\S]*?<\/li>)/g, '<ul style="margin-bottom: 16px; padding-left: 20px; line-height: 1.6; color: #1c2024;">$1</ul>');
-  html = html.replace(/<\/ul>\s*<ul.*?>/g, '');
-
-  const paragraphs = html.split(/\n\s*\n/);
-  const formattedParagraphs = paragraphs.map(p => {
-    p = p.trim();
-    if (!p) return '';
-    if (p.startsWith('<h') || p.startsWith('<ul') || p.startsWith('<ol') || p.startsWith('<div')) {
-      return p;
+/** Markdown tables (risk assessments are mostly tables) become HTML tables instead of rows of pipes. */
+function markdownTablesToHtml(text: string): string {
+  const lines = text.split('\n');
+  const out: string[] = [];
+  const cells = (line: string) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+  const isRow = (line?: string) => !!line && /^\s*\|.*\|\s*$/.test(line);
+  const isDivider = (line?: string) => !!line && /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
+  for (let i = 0; i < lines.length; i++) {
+    if (isRow(lines[i]) && isDivider(lines[i + 1])) {
+      const td = 'border: 1px solid #dcdad5; padding: 6px 8px; vertical-align: top; font-size: 13px;';
+      const head = cells(lines[i]).map(c => `<th style="${td} background: #f3f2ee; text-align: left;">${inline(c)}</th>`).join('');
+      const rows: string[] = [];
+      i += 2;
+      while (i < lines.length && isRow(lines[i])) {
+        rows.push(`<tr>${cells(lines[i]).map(c => `<td style="${td}">${inline(c).replace(/&lt;br\s*\/?&gt;/gi, '<br>')}</td>`).join('')}</tr>`);
+        i++;
+      }
+      i--;
+      out.push('', `<div><table style="border-collapse: collapse; width: 100%; margin-bottom: 16px; color: #1c2024;"><thead><tr>${head}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`, '');
+      continue;
     }
-    return `<p style="margin-bottom: 16px; line-height: 1.6; color: #1c2024; font-size: 14px;">${p.replace(/\n/g, '<br>')}</p>`;
-  });
+    out.push(lines[i]);
+  }
+  return out.join('\n');
+}
 
-  return formattedParagraphs.join('\n');
+function formatMarkdownToHtml(markdown: string): string {
+  const headingStyle = (size: number, top: number) =>
+    `font-family: 'Fraunces', Georgia, serif; color: #0a1826; font-size: ${size}px; font-weight: bold; margin-top: ${top}px; margin-bottom: 8px;`;
+
+  // The answer is text, not markup: a stray "<" in it would otherwise hide the rest of the email.
+  const lines = markdownTablesToHtml(escapeHtml(markdown)).split('\n');
+  const out: string[] = [];
+  let paragraph: string[] = [];
+  let list: string[] = [];
+  const flush = () => {
+    if (paragraph.length) out.push(`<p style="margin: 0 0 16px 0; line-height: 1.6; color: #1c2024; font-size: 14px;">${paragraph.map(inline).join('<br>')}</p>`);
+    if (list.length) out.push(`<ul style="margin: 0 0 16px 0; padding-left: 20px; line-height: 1.6; color: #1c2024; font-size: 14px;">${list.map(i => `<li style="margin-bottom: 6px;">${inline(i)}</li>`).join('')}</ul>`);
+    paragraph = [];
+    list = [];
+  };
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    const heading = line.match(/^(#{1,6})\s+(.*)$/);
+    const bullet = line.match(/^\s*(?:[*\-•]|\d+[.)])\s+(.*)$/);
+    if (!line.trim()) {
+      flush();
+    } else if (line.startsWith('<div><table')) {
+      flush();
+      out.push(line);
+    } else if (/^\s*(\*{3,}|-{3,}|_{3,})\s*$/.test(line)) {
+      flush();
+      out.push('<hr style="border: none; border-top: 1px solid #dcdad5; margin: 20px 0;">');
+    } else if (heading) {
+      flush();
+      const level = Math.min(heading[1].length, 3);
+      const [size, top] = level === 1 ? [22, 28] : level === 2 ? [18, 24] : [16, 20];
+      out.push(`<h${level} style="${headingStyle(size, top)}">${inline(heading[2])}</h${level}>`);
+    } else if (bullet) {
+      if (paragraph.length) { const p = paragraph; paragraph = []; out.push(`<p style="margin: 0 0 16px 0; line-height: 1.6; color: #1c2024; font-size: 14px;">${p.map(inline).join('<br>')}</p>`); }
+      list.push(bullet[1]);
+    } else {
+      if (list.length) flush();
+      paragraph.push(line.trim());
+    }
+  }
+  flush();
+  return out.join('\n');
 }
 
 
