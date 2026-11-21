@@ -266,7 +266,7 @@ ${query}
             })),
             config: {
               systemInstruction: activeSystemPrompt,
-              maxOutputTokens: Number(process.env.GEMINI_MAX_OUTPUT_TOKENS) || 32768
+              maxOutputTokens: Number(process.env.GEMINI_MAX_OUTPUT_TOKENS) || 65536
             }
           });
           const reason = String(response.candidates?.[0]?.finishReason || '');
@@ -330,7 +330,11 @@ ${query}
         // Trim lower-priority documents to fit instead of dropping all grounding context.
         // Thinking and the answer share this limit. With 8,192 and the default thinking level, long agent
         // instructions used every token on thinking and the answer came back empty (finish_reason "length").
+        // The answer always gets at least this much room: documents are trimmed to leave it free.
         const sarvamMaxTokens = Number(process.env.SARVAM_MAX_TOKENS) || 16384;
+        // On top of that, the answer may use whatever the window has left after the prompt, up to this cap,
+        // so a long request never shrinks the room left for the answer to the fixed minimum.
+        const sarvamOutputCap = Number(process.env.SARVAM_MAX_OUTPUT_TOKENS) || 64000;
         const sarvamEffort = process.env.SARVAM_REASONING_EFFORT || 'low';
         const sarvamContextTokens = 128000;
         const promptOverheadTokens = estimateTokens(activeSystemPrompt) + estimateTokens(buildUserMessage('')) + 1000;
@@ -341,7 +345,15 @@ ${query}
           finalUserMessage = buildUserMessage(fitContextToBudget(fullReferenceContext, contextBudgetTokens, keywords));
         }
 
-        const callSarvam = async (messages: ChatMessage[], thinking: boolean) => {
+        // Prompt size is estimated from characters, so leave 10% (and at least 2,000 tokens) of headroom.
+        const outputTokensFor = (messages: ChatMessage[]) => {
+          const promptTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content) + 8, 0);
+          const room = sarvamContextTokens - Math.ceil(promptTokens * 1.1) - 2000;
+          return Math.max(sarvamMaxTokens, Math.min(sarvamOutputCap, room));
+        };
+
+        const callSarvam = async (messages: ChatMessage[], thinking: boolean, maxTokens = outputTokensFor(messages)): Promise<{ content: string; finishReason: string }> => {
+          console.log(`[LLM Router] Sarvam max_tokens=${maxTokens} (thinking=${thinking})`);
           const response = await fetch('https://api.sarvam.ai/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -350,7 +362,7 @@ ${query}
             },
             body: JSON.stringify({
               model: sarvamModel,
-              max_tokens: sarvamMaxTokens,
+              max_tokens: maxTokens,
               reasoning_effort: thinking ? sarvamEffort : null,
               temperature: 0.7,
               messages
@@ -358,6 +370,11 @@ ${query}
           });
           if (!response.ok) {
             const errText = await response.text();
+            // If Sarvam won't accept the larger limit, ask again with the minimum instead of failing the run.
+            if (response.status === 400 && maxTokens > sarvamMaxTokens && /token|length|context/i.test(errText)) {
+              console.warn(`[LLM Router] Sarvam refused max_tokens=${maxTokens}, retrying with ${sarvamMaxTokens}: ${errText.slice(0, 300)}`);
+              return callSarvam(messages, thinking, sarvamMaxTokens);
+            }
             throw new Error(`Sarvam AI API error (Status ${response.status}): ${errText}`);
           }
           const data = await response.json();
