@@ -63,6 +63,8 @@ export interface ApproveResult {
   alreadyActive?: boolean;
   /** The officer's onboard mailbox, taken from their profile, when the Outlook rules were emailed to the Master. */
   rulesSentFor?: string;
+  /** The Outlook rules went to the Master by email (complete, with a blank to fill in, or Rule A alone for the Master). */
+  rulesSent?: boolean;
 }
 
 /** Makes a pending request active, ends whoever held the rank before, and tells the officer. */
@@ -83,7 +85,10 @@ export async function approveMember(member: VesselMember, vessel: Vessel, origin
   const rank = rankByCode(member.rank_code);
   const onboard = normalizeEmail(officer?.vessel_email);
   let rulesSentFor: string | undefined;
+  let rulesSent = false;
+  let onboardMissing = false;
   let updated = vessel;
+  const firstRank = !vessel.setup_completed_at;
   if (rank && rank.code !== 'MS' && onboard && isEmail(onboard) && !isOwnAddress(onboard) && onboard !== vessel.master_email) {
     const { data: before } = await supabase.from('vessel_ranks').select('onboard_email')
       .eq('vessel_id', vessel.id).eq('rank_code', rank.code).maybeSingle();
@@ -100,8 +105,20 @@ export async function approveMember(member: VesselMember, vessel: Vessel, origin
       updated = { ...vessel, setup_completed_at: now };
     }
     try {
-      await sendRulesEmail({ vessel: updated, rank, onboardEmail: onboard, officerName: officer?.full_name || 'the officer', firstRank: !vessel.setup_completed_at });
+      await sendRulesEmail({ vessel: updated, rank, onboardEmail: onboard, officerName: officer?.full_name || 'the officer', firstRank });
       rulesSentFor = onboard;
+      rulesSent = true;
+    } catch (mailErr) {
+      console.error('Rules email failed:', (mailErr as Error).message);
+    }
+  } else if (rank) {
+    // Still email the rules, so the Captain never needs the website: the Master confirming the ship
+    // gets the ship-wide rule; an officer without an onboard mailbox gets Rule B with a blank address.
+    const masterOnly = rank.code === 'MS';
+    onboardMissing = !masterOnly;
+    try {
+      await sendRulesEmail({ vessel, rank, onboardEmail: null, officerName: officer?.full_name || 'the officer', firstRank, masterOnly });
+      rulesSent = true;
     } catch (mailErr) {
       console.error('Rules email failed:', (mailErr as Error).message);
     }
@@ -110,12 +127,12 @@ export async function approveMember(member: VesselMember, vessel: Vessel, origin
   // Tell the officer at their sign-in address. A failed email doesn't undo the approval.
   if (officer?.email && rank) {
     try {
-      await sendApprovedNotice({ to: officer.email, officerName: officer.full_name || 'there', vessel: updated, rank, origin, rulesSent: !!rulesSentFor });
+      await sendApprovedNotice({ to: officer.email, officerName: officer.full_name || 'there', vessel: updated, rank, origin, rulesSent, onboardMissing });
     } catch (mailErr) {
       console.error('Approval notice failed:', (mailErr as Error).message);
     }
   }
-  return { ok: true, rulesSentFor };
+  return { ok: true, rulesSentFor, rulesSent };
 }
 
 /**
@@ -161,7 +178,7 @@ export async function handleApprovalReply(opts: { from: string; subject: string;
     vessel, officerName, rankLabel, ref: ref10, origin: opts.origin,
     outcome: result.ok ? (result.alreadyActive ? 'already' : 'approved') : 'failed',
     error: result.error,
-    rulesSent: !!result.rulesSentFor
+    rulesSent: !!result.rulesSent
   });
   return true;
 }

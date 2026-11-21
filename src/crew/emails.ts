@@ -183,7 +183,7 @@ export async function sendReplyApprovalResult(opts: {
       ? `Thank you. ${who} is now verified. We have let them know.`
       : `${who} was already verified. Nothing has changed.`);
     if (rulesSent) {
-      paras.push('We have sent you a separate email with the Outlook rules for this officer. Adding them takes about five minutes.');
+      paras.push('We have sent you a separate email with the Outlook rules, written out in full. Adding them takes about five minutes.');
     } else if (!vessel.setup_completed_at) {
       paras.push(`This ship is not yet set up for crew email. The setup page lists each rank's onboard mailbox and the Outlook rules to add. If this computer can't open it, the officer can open it from a phone or in port and send you the rules: ${setupUrl}`);
     }
@@ -231,8 +231,8 @@ export function masterSignupUrl(origin: string, vessel: Vessel) {
   return `${origin}/signup?${q.toString()}`;
 }
 
-export async function sendApprovedNotice(opts: { to: string; officerName: string; vessel: Vessel; rank: Rank; origin: string; rulesSent?: boolean }) {
-  const { to, officerName, vessel, rank, origin, rulesSent } = opts;
+export async function sendApprovedNotice(opts: { to: string; officerName: string; vessel: Vessel; rank: Rank; origin: string; rulesSent?: boolean; onboardMissing?: boolean }) {
+  const { to, officerName, vessel, rank, origin, rulesSent, onboardMissing } = opts;
   const code = subjectCode(rank.code);
   const ship = vesselLabel(vessel);
   await new SmtpService().sendMail({
@@ -243,7 +243,9 @@ export async function sendApprovedNotice(opts: { to: string; officerName: string
       '',
       `The Master has approved you as ${rank.label} on ${ship}.`,
       '',
-      rulesSent
+      onboardMissing
+        ? `The Master has been sent the Outlook rules for your rank, but your profile has no onboard mailbox, so the Master needs to fill in the address answers are forwarded to. Tell the Master the ship mailbox you read onboard, and add it to your profile as your interaction email: ${origin}/dashboard. Once the rule is in place, email ${vessel.master_email} from that mailbox with "${code} TEST" in the subject.`
+        : rulesSent
         ? `The Master has been sent the Outlook rules for your rank. Once they are added, email ${vessel.master_email} from your onboard mailbox with "${code} TEST" in the subject. When the test comes back, put your module and code in the subject of every request, for example "A1 // ${code}".`
         : vessel.setup_completed_at
         ? `From your onboard mailbox, email ${vessel.master_email} with "${code} TEST" in the subject once to check your rule. Then put your module and code in the subject of every request, for example "A1 // ${code}".`
@@ -269,45 +271,48 @@ export async function sendRemovedNotice(opts: { to: string; officerName: string;
 }
 
 /**
- * The Outlook rules for one rank, emailed to the Master after approval, so no website is needed.
- * The subject has no "MATE-", so the Master's own rule doesn't forward it.
+ * The Outlook rules, emailed to the Master after approval, written out in the email itself so no
+ * website is needed. The subject has no "MATE-", so the Master's own rule doesn't forward it.
+ *
+ * - An officer with an onboard mailbox in their profile gets Rule A and a complete Rule B.
+ * - An officer without one gets Rule A and Rule B with the forwarding address left for the Captain
+ *   to fill in (the officer is asked to add it to their profile).
+ * - The Master confirming the ship gets Rule A alone: it is the same for every officer.
  */
-export async function sendRulesEmail(opts: { vessel: Vessel; rank: Rank; onboardEmail: string; officerName: string; firstRank: boolean }) {
-  const { vessel, rank, onboardEmail, officerName, firstRank } = opts;
+export async function sendRulesEmail(opts: {
+  vessel: Vessel; rank: Rank; onboardEmail: string | null; officerName: string; firstRank: boolean;
+  /** The Master confirming their own ship: send only the ship-wide rule. */
+  masterOnly?: boolean;
+}) {
+  const { vessel, rank, onboardEmail, officerName, firstRank, masterOnly } = opts;
   const code = subjectCode(rank.code);
   const inbox = mateInbox();
   const ship = vesselLabel(vessel);
-  const rule1 = [
-    `Rule A (once per ship${firstRank ? '' : ', skip it if you already added it'}): "M.A.T.E questions out"`,
-    `  When: the subject includes  MATE-`,
-    `  Do: forward it to  ${inbox}`,
-    `  Except: if it is from  ${inbox}`
-  ];
-  const rule2 = [
-    `Rule B: "M.A.T.E answers to ${rank.label}"`,
-    `  When: it is from  ${inbox}  and the subject includes  ${code}`,
-    `  Do: forward it to  ${onboardEmail}`
-  ];
-  const classic = [
-    'Classic Outlook: File > Manage Rules & Alerts > New Rule > "Apply rule on messages I receive".',
-    'Tick the conditions, click each underlined word to enter the value, choose "forward it to people or public group", add the exception where listed, name the rule and Finish.'
-  ];
-  const newer = [
-    'New Outlook or Outlook on the web: Settings > Mail > Rules > Add new rule.',
-    'Name it, add the conditions and the action "Forward to", add the exception where listed, and Save.'
-  ];
+  const forwardTo = onboardEmail || `${officerName}'s onboard mailbox`;
+  const ruleATitle = `Rule A: "M.A.T.E questions out"${masterOnly || firstRank ? ' (once per ship)' : ' (skip if you already added it)'}`;
+  const ruleBTitle = `Rule B: "M.A.T.E answers to ${rank.label}"`;
+  const missingNote = `We don't have ${officerName}'s onboard mailbox yet, so the forwarding address in Rule B is left for you to fill in. Use the ship mailbox they read onboard. We have also asked them to add it to their M.A.T.E profile.`;
+
+  const intro = masterOnly
+    ? `${ship} is now confirmed on M.A.T.E. Officers will email this mailbox with a M.A.T.E code in the subject, and this Outlook rule forwards those emails to M.A.T.E. Please add it on this computer. It takes about two minutes.`
+    : `${officerName} (${rank.label}) is now verified on ${ship}. To pass their questions and answers through this mailbox, please add these Outlook rules on this computer. It takes about five minutes.`;
+  const closing = masterOnly
+    ? `When each officer is approved, you will get a short email with one more rule for their rank. The rules only forward emails that carry a M.A.T.E code. Nothing else in your mailbox is touched.`
+    : `When the rules are in place, ${officerName} will send one email with "${code} TEST" in the subject from ${forwardTo}. M.A.T.E replies, and the rank is marked as working. The rules only forward emails that carry a M.A.T.E code. Nothing else in your mailbox is touched.`;
+
+  const ruleAText = [ruleATitle, `  When: the subject includes  MATE-`, `  Do: forward it to  ${inbox}`, `  Except: if it is from  ${inbox}`];
+  const ruleBText = [ruleBTitle, `  When: it is from  ${inbox}  and the subject includes  ${code}`, `  Do: forward it to  ${onboardEmail || `[${officerName}'s onboard mailbox]`}`];
+  const classic = 'Classic Outlook: File > Manage Rules & Alerts > New Rule > "Apply rule on messages I receive". Tick the conditions, click each underlined word to enter the value, choose "forward it to people or public group", add the exception where listed, name the rule and Finish.';
+  const newer = 'New Outlook or Outlook on the web: Settings > Mail > Rules > Add new rule. Name it, add the conditions and the action "Forward to", add the exception where listed, and Save.';
+
   const text = [
-    'Dear Captain,',
-    '',
-    `${officerName} (${rank.label}) is now verified on ${ship}. To pass their questions and answers through this mailbox, please add these Outlook rules on this computer.`,
-    '',
-    ...rule1, '',
-    ...rule2, '',
-    'How to add a rule:',
-    ...classic, ...newer,
-    '',
-    `When the rules are in place, ${officerName} will send one email with "${code} TEST" in the subject from ${onboardEmail}. M.A.T.E replies, and the rank is marked as working.`,
-    'The rules only forward emails that carry a M.A.T.E code. Nothing else in your mailbox is touched.'
+    'Dear Captain,', '',
+    intro, '',
+    ...ruleAText, '',
+    ...(masterOnly ? [] : [...ruleBText, '']),
+    ...(!masterOnly && !onboardEmail ? [missingNote, ''] : []),
+    'How to add a rule:', classic, newer, '',
+    closing
   ].join('\n') + SIGN_OFF;
 
   const ruleHtml = (title: string, rows: [string, string][]) => `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 14px 0;border:1px solid #dcdad5;border-radius:6px;">
@@ -315,28 +320,30 @@ export async function sendRulesEmail(opts: { vessel: Vessel; rank: Rank; onboard
 ${rows.map(([k, v]) => `<tr><td style="padding:6px 14px;width:90px;font-size:13px;color:#5b6575;vertical-align:top;">${esc(k)}</td><td style="padding:6px 14px;font-size:13px;color:#1c2024;">${v}</td></tr>`).join('')}
 </table>`;
   const mono = (v: string) => `<code style="font-family:Consolas,monospace;background:#f3f2ef;padding:1px 5px;border-radius:3px;">${esc(v)}</code>`;
+  const blank = `<span style="display:inline-block;min-width:200px;border-bottom:1px solid #9aa7b8;color:#7a7f87;font-style:italic;">${esc(officerName)}'s onboard mailbox</span>`;
   const html = emailHtml({
     paragraphs: [
       'Dear Captain,',
-      `${esc(officerName)} (${esc(rank.label)}) is now verified on ${esc(ship)}. To pass their questions and answers through this mailbox, please add these Outlook rules on this computer. It takes about five minutes.`,
-      ruleHtml(`Rule A: M.A.T.E questions out${firstRank ? ' (once per ship)' : ' (skip if already added)'}`, [
+      esc(intro),
+      ruleHtml(ruleATitle, [
         ['When', `the subject includes ${mono('MATE-')}`],
         ['Do', `forward it to ${mono(inbox)}`],
         ['Except', `if it is from ${mono(inbox)}`]
       ]),
-      ruleHtml(`Rule B: M.A.T.E answers to ${rank.label}`, [
+      ...(masterOnly ? [] : [ruleHtml(ruleBTitle, [
         ['When', `it is from ${mono(inbox)} and the subject includes ${mono(code)}`],
-        ['Do', `forward it to ${mono(onboardEmail)}`]
-      ]),
-      `<b>Classic Outlook:</b> File &gt; Manage Rules &amp; Alerts &gt; New Rule &gt; "Apply rule on messages I receive". Tick the conditions, click each underlined word to enter the value, choose "forward it to people or public group", add the exception where listed, name the rule and Finish.`,
-      `<b>New Outlook or Outlook on the web:</b> Settings &gt; Mail &gt; Rules &gt; Add new rule. Name it, add the conditions and the action "Forward to", add the exception where listed, and Save.`,
-      `When the rules are in place, ${esc(officerName)} will send one email with ${mono(`${code} TEST`)} in the subject from ${esc(onboardEmail)}. M.A.T.E replies, and the rank is marked as working. The rules only forward emails that carry a M.A.T.E code; nothing else in your mailbox is touched.`
+        ['Do', `forward it to ${onboardEmail ? mono(onboardEmail) : blank}`]
+      ])]),
+      ...(!masterOnly && !onboardEmail ? [esc(missingNote)] : []),
+      `<b>Classic Outlook:</b> ${esc(classic.replace(/^Classic Outlook: /, ''))}`,
+      `<b>New Outlook or Outlook on the web:</b> ${esc(newer.replace(/^New Outlook or Outlook on the web: /, ''))}`,
+      esc(closing)
     ]
   });
 
   await new SmtpService().sendMail({
     to: vessel.master_email,
-    subject: `M.A.T.E: Outlook rules for ${rank.label} on ${ship}`,
+    subject: masterOnly ? `M.A.T.E: Outlook rule for ${ship}` : `M.A.T.E: Outlook rules for ${rank.label} on ${ship}`,
     text,
     html,
     replyTo: inbox
