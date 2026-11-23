@@ -128,7 +128,7 @@ export async function approveMember(member: VesselMember, vessel: Vessel, origin
   // Not for the Master confirming their own ship: the rules email already tells them.
   if (officer?.email && rank && rank.code !== 'MS') {
     try {
-      await sendApprovedNotice({ to: officer.email, officerName: officer.full_name || 'there', vessel: updated, rank, origin, rulesSent, onboardMissing });
+      await sendApprovedNotice({ to: officer.email, shipEmail: officer.vessel_email, officerName: officer.full_name || 'there', vessel: updated, rank, origin, rulesSent, onboardMissing });
     } catch (mailErr) {
       console.error('Approval notice failed:', (mailErr as Error).message);
     }
@@ -164,10 +164,10 @@ export async function handleApprovalReply(opts: { from: string; subject: string;
   if (decision === 'decline') {
     if (member.status === 'pending') {
       await endMembership(member.id);
-      const { data: who } = await supabase.from('profiles').select('email').eq('id', member.user_id).maybeSingle();
+      const { data: who } = await supabase.from('profiles').select('email, vessel_email').eq('id', member.user_id).maybeSingle();
       const rank = rankByCode(member.rank_code);
       if (who?.email && rank) {
-        try { await sendDeclinedNotice({ to: who.email, officerName, vessel, rank }); }
+        try { await sendDeclinedNotice({ to: who.email, shipEmail: who.vessel_email, officerName, vessel, rank }); }
         catch (mailErr) { console.error('Declined notice failed:', (mailErr as Error).message); }
       }
     }

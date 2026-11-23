@@ -89,10 +89,10 @@ export async function POST(req: NextRequest) {
     const member = await activeMember(vessel.id, rank.code);
     if (!member) return NextResponse.json(await payload(vessel));
     await endMembership(member.id);
-    const { data: officer } = await supabase.from('profiles').select('full_name, email').eq('id', member.user_id).maybeSingle();
+    const { data: officer } = await supabase.from('profiles').select('full_name, email, vessel_email').eq('id', member.user_id).maybeSingle();
     if (officer?.email) {
       try {
-        await sendRemovedNotice({ to: officer.email, officerName: officer.full_name || 'there', vessel, rank });
+        await sendRemovedNotice({ to: officer.email, shipEmail: officer.vessel_email, officerName: officer.full_name || 'there', vessel, rank });
       } catch (mailErr) {
         console.error('Removal notice failed:', (mailErr as Error).message);
       }

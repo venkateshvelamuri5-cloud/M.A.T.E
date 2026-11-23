@@ -1,6 +1,6 @@
 import { SmtpService } from '../services/smtp';
 import { Rank, ROUTED_RANKS, subjectCode } from './ranks';
-import { mateInbox, Vessel, vesselLabel } from './vessels';
+import { isEmail, isOwnAddress, mateInbox, normalizeEmail, Vessel, vesselLabel } from './vessels';
 
 // Emails for crew access. Mail meant only for the Master never carries "MATE-" in its subject,
 // so the Master's outgoing rule can't send it back to M.A.T.E. Mail meant for an officer always
@@ -209,11 +209,25 @@ export async function sendReplyApprovalResult(opts: {
   });
 }
 
-/** Tells the officer, at their sign-in address, that the Master declined the request. */
-export async function sendDeclinedNotice(opts: { to: string; officerName: string; vessel: Vessel; rank: Rank }) {
-  const { to, officerName, vessel, rank } = opts;
-  await new SmtpService().sendMail({
-    to,
+/**
+ * Sends an officer's notice to their sign-in Gmail and, separately, to their ship email, the
+ * address module answers already reach. The Master's shared address is left out: the Captain
+ * gets their own emails about each officer.
+ */
+async function sendToOfficer(vessel: Vessel, gmail: string, shipEmail: string | null | undefined, mail: { subject: string; text: string }) {
+  const ship = normalizeEmail(shipEmail);
+  const to = [normalizeEmail(gmail)];
+  if (ship && isEmail(ship) && !to.includes(ship) && !isOwnAddress(ship) && ship !== normalizeEmail(vessel.master_email)) to.push(ship);
+  const smtp = new SmtpService();
+  const results = await Promise.allSettled(to.filter(Boolean).map(addr => smtp.sendMail({ ...mail, to: addr })));
+  results.forEach((r, i) => { if (r.status === 'rejected') console.error(`Officer notice to ${to[i]} failed:`, (r.reason as Error)?.message); });
+  if (results.length && results.every(r => r.status === 'rejected')) throw (results[0] as PromiseRejectedResult).reason;
+}
+
+/** Tells the officer, at their sign-in address and ship email, that the Master declined the request. */
+export async function sendDeclinedNotice(opts: { to: string; shipEmail?: string | null; officerName: string; vessel: Vessel; rank: Rank }) {
+  const { to, shipEmail, officerName, vessel, rank } = opts;
+  await sendToOfficer(vessel, to, shipEmail, {
     subject: `Ship email request not approved on ${vesselLabel(vessel)}`,
     text: [
       `Hello ${officerName},`,
@@ -231,12 +245,11 @@ export function masterSignupUrl(origin: string, vessel: Vessel) {
   return `${origin}/signup?${q.toString()}`;
 }
 
-export async function sendApprovedNotice(opts: { to: string; officerName: string; vessel: Vessel; rank: Rank; origin: string; rulesSent?: boolean; onboardMissing?: boolean }) {
-  const { to, officerName, vessel, rank, origin, rulesSent, onboardMissing } = opts;
+export async function sendApprovedNotice(opts: { to: string; shipEmail?: string | null; officerName: string; vessel: Vessel; rank: Rank; origin: string; rulesSent?: boolean; onboardMissing?: boolean }) {
+  const { to, shipEmail, officerName, vessel, rank, origin, rulesSent, onboardMissing } = opts;
   const code = subjectCode(rank.code);
   const ship = vesselLabel(vessel);
-  await new SmtpService().sendMail({
-    to,
+  await sendToOfficer(vessel, to, shipEmail, {
     subject: `You're approved on ${ship}`,
     text: [
       `Hello ${officerName},`,
@@ -251,15 +264,14 @@ export async function sendApprovedNotice(opts: { to: string; officerName: string
         ? `From your onboard mailbox, email ${vessel.master_email} with "${code} TEST" in the subject once to check your rule. Then put your module and code in the subject of every request, for example "A1 // ${code}".`
         : `The Master still needs to finish the ship's email setup. You can see the status in your profile: ${origin}/dashboard`,
       '',
-      'Answers come back to your onboard mailbox, with a copy here.'
+      'Answers come back to your onboard mailbox, with a copy to your sign-in Gmail.'
     ].join('\n') + SIGN_OFF
   });
 }
 
-export async function sendRemovedNotice(opts: { to: string; officerName: string; vessel: Vessel; rank: Rank }) {
-  const { to, officerName, vessel, rank } = opts;
-  await new SmtpService().sendMail({
-    to,
+export async function sendRemovedNotice(opts: { to: string; shipEmail?: string | null; officerName: string; vessel: Vessel; rank: Rank }) {
+  const { to, shipEmail, officerName, vessel, rank } = opts;
+  await sendToOfficer(vessel, to, shipEmail, {
     subject: `Ship email ended on ${vesselLabel(vessel)}`,
     text: [
       `Hello ${officerName},`,
