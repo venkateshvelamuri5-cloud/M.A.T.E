@@ -81,13 +81,14 @@ export default function SignupPage() {
         setStatusMsg("Account successfully registered! Initializing mariner space...");
 
         // Fire welcome email — non-blocking
+        // It goes to the sign-in Gmail and to the ship email; the server reads both from the new account.
         fetch('/api/welcome', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: emailInput,
-            fullName: fullNameInput
-          })
+          headers: {
+            'Content-Type': 'application/json',
+            ...(data.session ? { Authorization: `Bearer ${data.session.access_token}` } : {})
+          },
+          body: JSON.stringify({ email: emailInput })
         }).catch(err => console.warn('Welcome email failed (non-critical):', err));
 
         setTimeout(() => {

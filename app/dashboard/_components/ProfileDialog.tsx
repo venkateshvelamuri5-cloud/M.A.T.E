@@ -94,6 +94,14 @@ export default function ProfileDialog() {
         if (aErr) throw aErr;
       }
       setProfile(data || { ...profile, ...update });
+      // A new ship address gets the welcome email too, so the officer sees how to use M.A.T.E from it.
+      if (emailChanged && update.vessel_email) {
+        supabase.auth.getSession().then(({ data: { session } }) => session && fetch('/api/welcome', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({ shipOnly: true })
+        })).catch(() => { /* the welcome is a courtesy; the profile is saved */ });
+      }
       setAnswers(moduleAnswers);
       toast('Profile saved. Your next answers use these details.');
       closeProfile();

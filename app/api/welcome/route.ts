@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SmtpService } from '../../../src/services/smtp';
+import { supabase } from '../../../src/supabase-client';
+import { isEmail, isOwnAddress, normalizeEmail, vesselByMasterEmail } from '../../../src/crew/vessels';
+import { rankFromLabel } from '../../../src/crew/ranks';
 
 const WELCOME_MANUAL_TEXT = `M.A.T.E USER MANUAL
 Maritime Automated Technical Executive
@@ -160,27 +163,11 @@ Fair winds and following seas!
 Maritime Automated Technical Executive
 `;
 
-/**
- * POST /api/welcome
- * Sends a welcome email with PDF user manual to a newly registered user.
- * Called from the signup page after successful Supabase auth registration.
- * Non-blocking — always returns 200 so it doesn't interrupt the signup flow.
- */
-export async function POST(req: NextRequest) {
-  const smtp = new SmtpService();
+/** How long after sign-up the welcome can be requested without a session (email confirmation may be on). */
+const FRESH_SIGNUP_MS = 30 * 60 * 1000;
 
-  try {
-    const body = await req.json();
-    const { email, fullName } = body;
-
-    if (!email) {
-      return NextResponse.json({ error: 'Email is required' }, { status: 400 });
-    }
-
-    const name = fullName ? fullName.split(' ')[0] : 'Mariner';
-
-    // Build the welcome email HTML
-    const htmlBody = `
+function welcomeHtml(name: string) {
+  return `
 <div style="background-color:#FCFBF8; font-family:'Inter',-apple-system,sans-serif; color:#1c2024; padding:32px 24px; max-width:600px; margin:0 auto; border:1px solid #dcdad5; border-radius:12px;">
 
   <div style="border-bottom:1px solid #dcdad5; padding-bottom:16px; margin-bottom:24px;">
@@ -267,16 +254,78 @@ export async function POST(req: NextRequest) {
     <p style="margin:0;">© 2026 M.A.T.E. Merchant Navy Automation Systems. All rights reserved.</p>
   </div>
 </div>`;
+}
 
-    await smtp.sendMail({
-      to: email,
-      subject: `Welcome to M.A.T.E — Your Maritime AI Assistant is Ready`,
-      text: `Welcome to M.A.T.E, ${name}!\n\nYour workspace is now active.\n\nQuick start:\n- Email: Send queries to mate@logmark-ai.com from your vessel email. Use [A1] in subject for guaranteed routing.\n- Web UI: Login to your dashboard, select a module, fill Steps 1-4 and submit.\n\nDisclaimer: M.A.T.E can make mistakes. Please re-verify all outputs.\n\nFair winds!\nM.A.T.E Team`,
-      html: htmlBody
+const welcomeText = (name: string) =>
+  `Welcome to M.A.T.E, ${name}!\n\nYour workspace is now active.\n\nQuick start:\n- Email: Send queries to mate@logmark-ai.com from your vessel email. Use [A1] in subject for guaranteed routing.\n- Web UI: Login to your dashboard, select a module, fill Steps 1-4 and submit.\n\nDisclaimer: M.A.T.E can make mistakes. Please re-verify all outputs.\n\nFair winds!\nM.A.T.E Team`;
+
+/**
+ * The ship address the welcome should also reach: the one in the profile, or the one typed at sign-up.
+ * Skipped when it is the Master's shared ship address and the user isn't the Master: officers reach
+ * M.A.T.E through that mailbox with their rank code, and the Captain gets their own emails for that.
+ */
+async function shipAddress(loginEmail: string, rank: string | null, candidates: (string | null | undefined)[]) {
+  const ship = candidates.map(c => normalizeEmail(c)).find(c => c && isEmail(c));
+  if (!ship || ship === normalizeEmail(loginEmail) || isOwnAddress(ship)) return null;
+  if (rankFromLabel(rank || '')?.code !== 'MS' && await vesselByMasterEmail(ship)) return null;
+  return ship;
+}
+
+/**
+ * POST /api/welcome
+ * Sends the welcome email to a newly registered user: once to their sign-in Gmail and once,
+ * separately, to their ship address, which is where module answers are delivered too.
+ *
+ * The addresses come from the account on the server, never from the request body, so the
+ * route can't be used to send mail to arbitrary addresses:
+ * - with a session (Authorization: Bearer <token>), it sends for that user. The profile page
+ *   calls it with { shipOnly: true } when the ship address is added or changed.
+ * - without one (sign-up with email confirmation on), it sends only for an account created in
+ *   the last 30 minutes with the given sign-in email.
+ * Non-blocking: it returns 200 so it never interrupts sign-up.
+ */
+export async function POST(req: NextRequest) {
+  const smtp = new SmtpService();
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+
+    let userId: string | null = null;
+    if (token) {
+      const { data: { user } } = await supabase.auth.getUser(token);
+      userId = user?.id || null;
+    } else {
+      const email = normalizeEmail(body.email);
+      if (!email) return NextResponse.json({ error: 'Email is required' }, { status: 400 });
+      const { data: p } = await supabase.from('profiles').select('id, created_at').eq('email', email).maybeSingle();
+      if (p && Date.now() - new Date(p.created_at).getTime() < FRESH_SIGNUP_MS) userId = p.id;
+    }
+    if (!userId) return NextResponse.json({ success: false, error: 'No matching new account.' });
+
+    const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+    const { data: authData } = await supabase.auth.admin.getUserById(userId);
+    const meta = (authData?.user?.user_metadata || {}) as Record<string, string | undefined>;
+    const loginEmail = normalizeEmail(profile?.email || authData?.user?.email);
+    const fullName: string = profile?.full_name || meta.full_name || '';
+    const name = (fullName ? fullName.split(' ')[0] : 'Mariner').replace(/[<>&"]/g, '');
+    const ship = await shipAddress(loginEmail, profile?.rank || meta.rank || null, [profile?.vessel_email, meta.vessel_email]);
+
+    const recipients = [...(body.shipOnly ? [] : [loginEmail]), ...(ship ? [ship] : [])].filter(Boolean);
+    const mail = { subject: `Welcome to M.A.T.E — Your Maritime AI Assistant is Ready`, text: welcomeText(name), html: welcomeHtml(name) };
+
+    // One email per address, so a ship mail server that rejects or delays it can't hold up the Gmail copy.
+    const results = await Promise.allSettled(recipients.map(to => smtp.sendMail({ ...mail, to })));
+    const sentTo: string[] = [];
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') {
+        sentTo.push(recipients[i]);
+        console.log(`Welcome email sent successfully to: ${recipients[i]}`);
+      } else {
+        console.error(`Failed to send welcome email to ${recipients[i]}:`, (r.reason as Error)?.message);
+      }
     });
-
-    console.log(`Welcome email sent successfully to: ${email}`);
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: sentTo.length === recipients.length, sentTo });
 
   } catch (err) {
     // Non-blocking — log but don't fail the signup
