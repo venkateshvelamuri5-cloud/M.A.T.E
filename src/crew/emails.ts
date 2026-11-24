@@ -64,16 +64,14 @@ export async function sendApprovalRequest(opts: {
     request,
     '',
     'To approve, reply to this email with the word APPROVE. To decline, reply with the word DECLINE.',
-    'Please keep the subject as it is. M.A.T.E checks the reply came from this mailbox, marks the officer',
-    'as verified, and emails you the Outlook rules for their rank. No website is needed.',
+    'Please keep the subject as it is. M.A.T.E checks the reply came from this mailbox, marks the officer as verified, and emails you the Outlook rules for their rank. No website is needed.',
     '',
     `Ref: ${ref}`,
     ''
   ];
   if (!vessel.setup_completed_at) {
     lines.push(
-      'This ship is not set up for crew email yet. On the setup page you enter each rank\'s onboard mailbox once,',
-      'then copy the forwarding rules into Outlook. It takes about 15 minutes and is done once per ship:',
+      'This ship is not set up for crew email yet. On the setup page you enter each rank\'s onboard mailbox once, then copy the forwarding rules into Outlook. It takes about 15 minutes and is done once per ship:',
       setupUrl,
       ''
     );
@@ -81,8 +79,7 @@ export async function sendApprovalRequest(opts: {
   lines.push(`Officers' questions and answers pass through this mailbox. Each officer uses their own M.A.T.E account and run limit.`, '');
   if (!isMaster && !masterOnMate) {
     lines.push(
-      'Captain, M.A.T.E can draft your own paperwork too: risk assessments, audit closures, drill records and more,',
-      `written for ${ship}. Create your account in two minutes (it's free to start):`,
+      `Captain, M.A.T.E can draft your own paperwork too: risk assessments, audit closures, drill records and more, written for ${ship}. Create your account in two minutes (it's free to start):`,
       masterSignupUrl(origin, vessel),
       ''
     );
