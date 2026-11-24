@@ -1,6 +1,6 @@
 import { SmtpService } from '../services/smtp';
 import { Rank, ROUTED_RANKS, subjectCode } from './ranks';
-import { mateInbox, Vessel, vesselLabel } from './vessels';
+import { isEmail, isOwnAddress, mateInbox, normalizeEmail, Vessel, vesselLabel } from './vessels';
 
 // Emails for crew access. Mail meant only for the Master never carries "MATE-" in its subject,
 // so the Master's outgoing rule can't send it back to M.A.T.E. Mail meant for an officer always
@@ -40,56 +40,6 @@ ${opts.footnote ? `<p style="margin:20px 0 0 0;padding-top:12px;border-top:1px s
 </div>`;
 }
 
-/** A mailto: link that opens the Master's mail program with the reply already written. */
-function mailtoReply(subject: string, body: string) {
-  return `mailto:${mateInbox()}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-}
-
-/** The ready-written replies behind the Approve and Decline buttons. M.A.T.E reads "Decision:" and "Ref:". */
-export function approvalReplies(opts: { officerName: string; rankLabel: string; ship: string; ref: string; isMaster: boolean }) {
-  const { officerName, rankLabel, ship, ref, isMaster } = opts;
-  const approveBody = isMaster
-    ? [
-      'Dear M.A.T.E Team,',
-      '',
-      `I confirm that I am the Master of ${ship} and that this M.A.T.E account is mine.`,
-      '',
-      'Decision: APPROVE',
-      `Ref: ${ref}`,
-      '',
-      'Regards,',
-      `Master, ${ship}`
-    ]
-    : [
-      'Dear M.A.T.E Team,',
-      '',
-      `I confirm that ${officerName} is serving on board ${ship} as ${rankLabel}, and I approve their use of M.A.T.E through this ship's mailbox.`,
-      '',
-      'Decision: APPROVE',
-      `Ref: ${ref}`,
-      '',
-      'Regards,',
-      `Master, ${ship}`
-    ];
-  const declineBody = [
-    'Dear M.A.T.E Team,',
-    '',
-    isMaster
-      ? `This account was not set up by me. Please do not link it to ${ship}.`
-      : `I cannot confirm ${officerName} as ${rankLabel} on board ${ship}. Please do not link them to this ship's mailbox.`,
-    '',
-    'Decision: DECLINE',
-    `Ref: ${ref}`,
-    '',
-    'Regards,',
-    `Master, ${ship}`
-  ];
-  return {
-    approve: { subject: `Approval: ${officerName}, ${rankLabel}, ${ship} (Ref: ${ref})`, body: approveBody.join('\n') },
-    decline: { subject: `Declined: ${officerName}, ${rankLabel}, ${ship} (Ref: ${ref})`, body: declineBody.join('\n') }
-  };
-}
-
 export async function sendApprovalRequest(opts: {
   vessel: Vessel; rank: Rank; officerName: string; officerEmail: string; approvalToken: string; origin: string;
   /** False when the Master has no M.A.T.E account yet: the email then invites them to sign up. */
@@ -97,32 +47,31 @@ export async function sendApprovalRequest(opts: {
 }) {
   const { vessel, rank, officerName, officerEmail, approvalToken, origin, masterOnMate = true } = opts;
   const ship = vesselLabel(vessel);
-  const approveUrl = `${origin}/crew/approve?token=${approvalToken}`;
   const ref = approvalRef(approvalToken);
   const setupUrl = `${origin}/ship-setup/${vessel.setup_token}`;
   const isMaster = rank.code === 'MS';
-  const replies = approvalReplies({ officerName, rankLabel: rank.label, ship, ref, isMaster });
 
   const request = isMaster
-    ? `${officerName} (${officerEmail}) has linked a M.A.T.E account to this address as the Master of ${ship}. Please confirm that this is you.`
-    : `${officerName} (${officerEmail}) has asked to use M.A.T.E as ${rank.label} on ${ship}, through this mailbox. Please confirm that they serve on board in this rank.`;
+    ? `${officerName} (${officerEmail}) has set up a M.A.T.E account with this address as the Master of ${ship}. Please reply to let us know whether this is you.`
+    : `${officerName} (${officerEmail}) has asked to use M.A.T.E as ${rank.label} on ${ship}, through this mailbox. Please reply to let us know whether they serve on board in this rank.`;
 
-  // Plain text, for mail programs that don't show HTML.
+  // Plain text with no buttons or approval link, the same shape as the module answers that reach
+  // company mailboxes. Microsoft 365 filters quarantine HTML mail that asks the reader to "confirm"
+  // with buttons and links as likely phishing, so this email only asks for a reply.
   const lines = [
     'Dear Captain,',
     '',
     request,
     '',
-    'To approve, reply to this email with the word APPROVE and keep the subject as it is.',
-    `If this computer can open websites, you can also use this link: ${approveUrl}`,
+    'To approve, reply to this email with the word APPROVE. To decline, reply with the word DECLINE.',
+    'Please keep the subject as it is. M.A.T.E checks the reply came from this mailbox, marks the officer as verified, and emails you the Outlook rules for their rank. No website is needed.',
     '',
     `Ref: ${ref}`,
     ''
   ];
   if (!vessel.setup_completed_at) {
     lines.push(
-      'This ship is not set up for crew email yet. On the setup page you enter each rank\'s onboard mailbox once,',
-      'then copy the forwarding rules into Outlook. It takes about 15 minutes and is done once per ship:',
+      'This ship is not set up for crew email yet. On the setup page you enter each rank\'s onboard mailbox once, then copy the forwarding rules into Outlook. It takes about 15 minutes and is done once per ship:',
       setupUrl,
       ''
     );
@@ -130,40 +79,29 @@ export async function sendApprovalRequest(opts: {
   lines.push(`Officers' questions and answers pass through this mailbox. Each officer uses their own M.A.T.E account and run limit.`, '');
   if (!isMaster && !masterOnMate) {
     lines.push(
-      'Captain, M.A.T.E can draft your own paperwork too: risk assessments, audit closures, drill records and more,',
-      `written for ${ship}. Create your account in two minutes (it's free to start):`,
+      `Captain, M.A.T.E can draft your own paperwork too: risk assessments, audit closures, drill records and more, written for ${ship}. Create your account in two minutes (it's free to start):`,
       masterSignupUrl(origin, vessel),
       ''
     );
   }
   lines.push('If you did not expect this email, ignore it and nothing will change.');
 
-  const after = [
-    'Approve opens a reply that is already written. Just press <b>Send</b>. M.A.T.E checks it came from this mailbox, marks the officer as verified, and emails you the Outlook rules for their rank. No website is needed.',
-    `If the buttons don't open your mail program, reply to this email with the word <b>APPROVE</b> and keep the subject as it is.`
-  ];
-  if (!isMaster && !masterOnMate) {
-    after.push(`M.A.T.E can also prepare the Master's own paperwork, such as risk assessments, audit closures and drill records, written for ${esc(ship)}. <a href="${esc(masterSignupUrl(origin, vessel))}" style="color:#1f3a5f;">Create your account</a>. It is free to start.`);
-  }
-
-  const html = emailHtml({
-    paragraphs: ['Dear Captain,', esc(request)],
-    buttons: [
-      { label: isMaster ? 'Confirm it\'s me' : 'Approve', href: mailtoReply(replies.approve.subject, replies.approve.body), tone: 'primary' },
-      { label: 'Decline', href: mailtoReply(replies.decline.subject, replies.decline.body), tone: 'secondary' }
-    ],
-    after,
-    footnote: `Ref: ${ref}. Officers' questions and answers pass through this mailbox; each officer uses their own M.A.T.E account and run limit. If you did not expect this email, ignore it and nothing will change. Computer with web access? <a href="${esc(approveUrl)}" style="color:#7a7f87;">Approve online</a>.`
-  });
-
   await new SmtpService().sendMail({
     to: vessel.master_email,
-    subject: (isMaster ? `M.A.T.E: confirm your ship ${ship}` : `M.A.T.E: approve ${officerName} as ${rank.label} on ${ship}`) + ` (Ref: ${ref})`,
+    subject: (isMaster ? `M.A.T.E account for ${ship}` : `M.A.T.E request: ${officerName}, ${rank.label}, ${ship}`) + ` (Ref: ${ref})`,
     text: lines.join('\n') + SIGN_OFF,
-    html,
-    // The Master's reply must reach the inbox the webhook reads, even if mail is sent from another address.
-    replyTo: mateInbox()
+    replyTo: replyToInbox()
   });
+}
+
+/**
+ * Reply-To for the Captain's emails: M.A.T.E's inbox, but only when mail is sent from another
+ * address. A Reply-To that matches the sender adds nothing, and one that differs from it is a
+ * phishing signal to company mail filters, so it is left off when it isn't needed.
+ */
+function replyToInbox() {
+  const from = (process.env.SMTP_USER || '').toLowerCase();
+  return from && from === mateInbox() ? undefined : mateInbox();
 }
 
 /** Answers the Master's emailed reply to an approval request. Never carries "MATE-", so it stays with the Master. */
@@ -205,15 +143,29 @@ export async function sendReplyApprovalResult(opts: {
     subject,
     text: ['Dear Captain,', '', ...paras.flatMap(x => [x, '']), `Ref: ${ref}`].join('\n') + SIGN_OFF,
     html: emailHtml({ paragraphs: ['Dear Captain,', ...paras.map(esc)], footnote: `Ref: ${ref}` }),
-    replyTo: mateInbox()
+    replyTo: replyToInbox()
   });
 }
 
-/** Tells the officer, at their sign-in address, that the Master declined the request. */
-export async function sendDeclinedNotice(opts: { to: string; officerName: string; vessel: Vessel; rank: Rank }) {
-  const { to, officerName, vessel, rank } = opts;
-  await new SmtpService().sendMail({
-    to,
+/**
+ * Sends an officer's notice to their sign-in Gmail and, separately, to their ship email, the
+ * address module answers already reach. The Master's shared address is left out: the Captain
+ * gets their own emails about each officer.
+ */
+async function sendToOfficer(vessel: Vessel, gmail: string, shipEmail: string | null | undefined, mail: { subject: string; text: string }) {
+  const ship = normalizeEmail(shipEmail);
+  const to = [normalizeEmail(gmail)];
+  if (ship && isEmail(ship) && !to.includes(ship) && !isOwnAddress(ship) && ship !== normalizeEmail(vessel.master_email)) to.push(ship);
+  const smtp = new SmtpService();
+  const results = await Promise.allSettled(to.filter(Boolean).map(addr => smtp.sendMail({ ...mail, to: addr })));
+  results.forEach((r, i) => { if (r.status === 'rejected') console.error(`Officer notice to ${to[i]} failed:`, (r.reason as Error)?.message); });
+  if (results.length && results.every(r => r.status === 'rejected')) throw (results[0] as PromiseRejectedResult).reason;
+}
+
+/** Tells the officer, at their sign-in address and ship email, that the Master declined the request. */
+export async function sendDeclinedNotice(opts: { to: string; shipEmail?: string | null; officerName: string; vessel: Vessel; rank: Rank }) {
+  const { to, shipEmail, officerName, vessel, rank } = opts;
+  await sendToOfficer(vessel, to, shipEmail, {
     subject: `Ship email request not approved on ${vesselLabel(vessel)}`,
     text: [
       `Hello ${officerName},`,
@@ -231,12 +183,11 @@ export function masterSignupUrl(origin: string, vessel: Vessel) {
   return `${origin}/signup?${q.toString()}`;
 }
 
-export async function sendApprovedNotice(opts: { to: string; officerName: string; vessel: Vessel; rank: Rank; origin: string; rulesSent?: boolean; onboardMissing?: boolean }) {
-  const { to, officerName, vessel, rank, origin, rulesSent, onboardMissing } = opts;
+export async function sendApprovedNotice(opts: { to: string; shipEmail?: string | null; officerName: string; vessel: Vessel; rank: Rank; origin: string; rulesSent?: boolean; onboardMissing?: boolean }) {
+  const { to, shipEmail, officerName, vessel, rank, origin, rulesSent, onboardMissing } = opts;
   const code = subjectCode(rank.code);
   const ship = vesselLabel(vessel);
-  await new SmtpService().sendMail({
-    to,
+  await sendToOfficer(vessel, to, shipEmail, {
     subject: `You're approved on ${ship}`,
     text: [
       `Hello ${officerName},`,
@@ -251,15 +202,14 @@ export async function sendApprovedNotice(opts: { to: string; officerName: string
         ? `From your onboard mailbox, email ${vessel.master_email} with "${code} TEST" in the subject once to check your rule. Then put your module and code in the subject of every request, for example "A1 // ${code}".`
         : `The Master still needs to finish the ship's email setup. You can see the status in your profile: ${origin}/dashboard`,
       '',
-      'Answers come back to your onboard mailbox, with a copy here.'
+      'Answers come back to your onboard mailbox, with a copy to your sign-in Gmail.'
     ].join('\n') + SIGN_OFF
   });
 }
 
-export async function sendRemovedNotice(opts: { to: string; officerName: string; vessel: Vessel; rank: Rank }) {
-  const { to, officerName, vessel, rank } = opts;
-  await new SmtpService().sendMail({
-    to,
+export async function sendRemovedNotice(opts: { to: string; shipEmail?: string | null; officerName: string; vessel: Vessel; rank: Rank }) {
+  const { to, shipEmail, officerName, vessel, rank } = opts;
+  await sendToOfficer(vessel, to, shipEmail, {
     subject: `Ship email ended on ${vesselLabel(vessel)}`,
     text: [
       `Hello ${officerName},`,
@@ -355,7 +305,7 @@ ${rows.map(([k, v]) => `<tr><td style="padding:6px 14px;width:90px;font-size:13p
     subject: masterOnly ? `M.A.T.E: ${ship} confirmed, Outlook rules for crew email` : `M.A.T.E: Outlook rules for ${rank.label} on ${ship}`,
     text,
     html,
-    replyTo: inbox
+    replyTo: replyToInbox()
   });
 }
 
